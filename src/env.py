@@ -8,9 +8,13 @@ class ESBreakoutEnv(gym.Env):
         self,
         df,
         max_steps=5000,
-        point_value=50,      # ES = $50 per point
+        point_value=50,
         commission=5.0,
         max_trades=3,
+        max_hold_bars=96,
+        stop_loss_points=10,
+        take_profit_points=25,
+        rth_only_entries=True,
     ):
         super().__init__()
 
@@ -19,11 +23,13 @@ class ESBreakoutEnv(gym.Env):
         self.point_value = point_value
         self.commission = commission
         self.max_trades = max_trades
+        self.max_hold_bars = max_hold_bars
+        self.stop_loss_points = stop_loss_points
+        self.take_profit_points = take_profit_points
+        self.rth_only_entries = rth_only_entries
 
-        # 0 = HOLD, 1 = LONG, 2 = SHORT, 3 = EXIT
         self.action_space = spaces.Discrete(4)
 
-        # Observation features count
         self.feature_cols = [
             "first_break_above_PDH",
             "first_break_below_PDL",
@@ -40,8 +46,7 @@ class ESBreakoutEnv(gym.Env):
             "is_roll_period",
         ]
 
-        # + position + unrealized pnl
-        obs_size = len(self.feature_cols) + 2
+        obs_size = len(self.feature_cols) + 3
 
         self.observation_space = spaces.Box(
             low=-np.inf,
@@ -58,8 +63,10 @@ class ESBreakoutEnv(gym.Env):
         self.current_idx = self.start_idx
         self.end_idx = self.start_idx + self.max_steps
 
-        self.position = 0  # 0 flat, 1 long, -1 short
+        self.position = 0
         self.entry_price = 0.0
+        self.entry_idx = None
+
         self.trade_count = 0
         self.equity = 0.0
         self.peak_equity = 0.0
@@ -73,18 +80,39 @@ class ESBreakoutEnv(gym.Env):
         price = self.df.iloc[self.current_idx]["close"]
         return (price - self.entry_price) * self.position * self.point_value
 
+    def _bars_held(self):
+        if self.entry_idx is None:
+            return 0
+        return self.current_idx - self.entry_idx
+
     def _get_obs(self):
         row = self.df.iloc[self.current_idx]
-
         features = [row[col] for col in self.feature_cols]
+
         unrealized_pnl = self._get_unrealized_pnl()
 
         obs = np.array(
-            features + [self.position, unrealized_pnl / 1000.0],
+            features + [
+                self.position,
+                unrealized_pnl / 1000.0,
+                self._bars_held() / max(1, self.max_hold_bars),
+            ],
             dtype=np.float32,
         )
 
         return obs
+
+    def _close_position(self, price):
+        realized = (price - self.entry_price) * self.position * self.point_value
+        realized_after_cost = realized - self.commission
+
+        self.equity += realized_after_cost
+
+        self.position = 0
+        self.entry_price = 0.0
+        self.entry_idx = None
+
+        return realized_after_cost
 
     def step(self, action):
         row = self.df.iloc[self.current_idx]
@@ -96,13 +124,39 @@ class ESBreakoutEnv(gym.Env):
         reward = 0.0
         terminated = False
         truncated = False
+        exit_reason = None
 
-        # Reward/penalty for price movement while in position
+        # Movement reward while holding
         if self.position != 0:
             pnl_change = (next_price - price) * self.position * self.point_value
             reward += pnl_change
 
-        # Force model to focus only around PDH/PDL events/areas
+        # Hard risk controls
+        if self.position != 0:
+            unrealized_points = (price - self.entry_price) * self.position
+            bars_held = self._bars_held()
+
+            if unrealized_points <= -self.stop_loss_points:
+                realized = self._close_position(price)
+                reward += realized - 50
+                exit_reason = "stop_loss"
+
+            elif unrealized_points >= self.take_profit_points:
+                realized = self._close_position(price)
+                reward += realized + 50
+                exit_reason = "take_profit"
+
+            elif bars_held >= self.max_hold_bars:
+                realized = self._close_position(price)
+                reward += realized - 10
+                exit_reason = "max_hold"
+
+            elif row["is_rth"] == 0 and self.rth_only_entries:
+                # force exit when outside RTH for V2
+                realized = self._close_position(price)
+                reward += realized - 10
+                exit_reason = "outside_rth_exit"
+
         near_or_event = (
             row["near_PDH"] == 1 or
             row["near_PDL"] == 1 or
@@ -110,95 +164,85 @@ class ESBreakoutEnv(gym.Env):
             row["first_break_below_PDL"] == 1
         )
 
-        # Penalize new entries away from key levels
+        # RTH-only entries
+        if self.rth_only_entries and row["is_rth"] != 1 and action in [1, 2]:
+            reward -= 25
+            action = 0
+
+        # Penalize entries away from PDH/PDL
         if action in [1, 2] and not near_or_event:
             reward -= 20
             action = 0
 
         # LONG
-        if action == 1:
-            if self.position == 0 and self.trade_count < self.max_trades:
+        if action == 1 and self.position == 0:
+            if self.trade_count < self.max_trades:
                 self.position = 1
                 self.entry_price = price
+                self.entry_idx = self.current_idx
                 self.trade_count += 1
                 reward -= self.commission
 
-                # Bonus for long aligned with bias
                 if row["bias_long"] == 1 and row["first_break_above_PDH"] == 1:
-                    reward += 10
+                    reward += 15
 
-                # Penalty for long against short bias
                 if row["bias_short"] == 1:
-                    reward -= 10
+                    reward -= 15
 
         # SHORT
-        elif action == 2:
-            if self.position == 0 and self.trade_count < self.max_trades:
+        elif action == 2 and self.position == 0:
+            if self.trade_count < self.max_trades:
                 self.position = -1
                 self.entry_price = price
+                self.entry_idx = self.current_idx
                 self.trade_count += 1
                 reward -= self.commission
 
-                # Bonus for short aligned with bias
                 if row["bias_short"] == 1 and row["first_break_below_PDL"] == 1:
-                    reward += 10
+                    reward += 15
 
-                # Penalty for short against long bias
                 if row["bias_long"] == 1:
-                    reward -= 10
+                    reward -= 15
 
-        # EXIT
-        elif action == 3:
-            if self.position != 0:
-                realized = (price - self.entry_price) * self.position * self.point_value
-                self.equity += realized - self.commission
-                reward += realized - self.commission
+        # Manual EXIT
+        elif action == 3 and self.position != 0:
+            realized = self._close_position(price)
+            reward += realized
 
-                # High-RR style reward
-                if realized > 300:
-                    reward += 25
-                elif realized > 150:
-                    reward += 10
+            if realized > 500:
+                reward += 50
+            elif realized > 250:
+                reward += 20
+            elif -50 < realized < 50:
+                reward -= 10
 
-                # Penalty for tiny random exits
-                if -50 < realized < 50:
-                    reward -= 10
+            exit_reason = "agent_exit"
 
-                self.position = 0
-                self.entry_price = 0.0
-
-        # Overtrade penalty
-        if self.trade_count > self.max_trades:
-            reward -= 50
+        # Wait reward
+        if action == 0 and not near_or_event and self.position == 0:
+            reward += 0.05
 
         # Drawdown penalty
         self.peak_equity = max(self.peak_equity, self.equity)
         drawdown = self.peak_equity - self.equity
-
         if drawdown > 1000:
             reward -= 50
-
-        # Small reward for waiting when not near setup
-        if action == 0 and not near_or_event and self.position == 0:
-            reward += 0.05
 
         self.current_idx += 1
 
         if self.current_idx >= self.end_idx:
             truncated = True
-
-            # Force close open position
             if self.position != 0:
                 final_price = self.df.iloc[self.current_idx]["close"]
-                realized = (final_price - self.entry_price) * self.position * self.point_value
-                self.equity += realized - self.commission
-                reward += realized - self.commission
-                self.position = 0
+                realized = self._close_position(final_price)
+                reward += realized
+                exit_reason = "episode_end"
 
         info = {
             "equity": self.equity,
             "position": self.position,
             "trade_count": self.trade_count,
+            "exit_reason": exit_reason,
         }
 
         return self._get_obs(), reward, terminated, truncated, info

@@ -126,12 +126,12 @@ class ESBreakoutEnv(gym.Env):
         truncated = False
         exit_reason = None
 
-        # Movement reward while holding
+        # Reward/penalty while holding position
         if self.position != 0:
             pnl_change = (next_price - price) * self.position * self.point_value
             reward += pnl_change
 
-        # Hard risk controls
+        # Hard exits
         if self.position != 0:
             unrealized_points = (price - self.entry_price) * self.position
             bars_held = self._bars_held()
@@ -152,7 +152,6 @@ class ESBreakoutEnv(gym.Env):
                 exit_reason = "max_hold"
 
             elif row["is_rth"] == 0 and self.rth_only_entries:
-                # force exit when outside RTH for V2
                 realized = self._close_position(price)
                 reward += realized - 10
                 exit_reason = "outside_rth_exit"
@@ -166,15 +165,15 @@ class ESBreakoutEnv(gym.Env):
 
         # RTH-only entries
         if self.rth_only_entries and row["is_rth"] != 1 and action in [1, 2]:
-            reward -= 25
+            reward -= 5
             action = 0
 
         # Penalize entries away from PDH/PDL
         if action in [1, 2] and not near_or_event:
-            reward -= 20
+            reward -= 5
             action = 0
 
-        # LONG
+        # LONG entry
         if action == 1 and self.position == 0:
             if self.trade_count < self.max_trades:
                 self.position = 1
@@ -183,13 +182,15 @@ class ESBreakoutEnv(gym.Env):
                 self.trade_count += 1
                 reward -= self.commission
 
+                # Strong bonus for valid long breakout with bias
                 if row["bias_long"] == 1 and row["first_break_above_PDH"] == 1:
-                    reward += 15
+                    reward += 50
 
+                # Mild penalty for going long against short bias
                 if row["bias_short"] == 1:
                     reward -= 15
 
-        # SHORT
+        # SHORT entry
         elif action == 2 and self.position == 0:
             if self.trade_count < self.max_trades:
                 self.position = -1
@@ -198,9 +199,11 @@ class ESBreakoutEnv(gym.Env):
                 self.trade_count += 1
                 reward -= self.commission
 
+                # Strong bonus for valid short breakdown with bias
                 if row["bias_short"] == 1 and row["first_break_below_PDL"] == 1:
-                    reward += 15
+                    reward += 50
 
+                # Mild penalty for going short against long bias
                 if row["bias_long"] == 1:
                     reward -= 15
 
@@ -218,13 +221,14 @@ class ESBreakoutEnv(gym.Env):
 
             exit_reason = "agent_exit"
 
-        # Wait reward
+        # No reward for waiting now
         if action == 0 and not near_or_event and self.position == 0:
-            reward += 0.05
+            reward += 0.0
 
         # Drawdown penalty
         self.peak_equity = max(self.peak_equity, self.equity)
         drawdown = self.peak_equity - self.equity
+
         if drawdown > 1000:
             reward -= 50
 
@@ -232,6 +236,7 @@ class ESBreakoutEnv(gym.Env):
 
         if self.current_idx >= self.end_idx:
             truncated = True
+
             if self.position != 0:
                 final_price = self.df.iloc[self.current_idx]["close"]
                 realized = self._close_position(final_price)

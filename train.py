@@ -41,7 +41,7 @@ model = PPO(
 )
 
 print("Training started...")
-model.learn(total_timesteps=100_000)
+model.learn(total_timesteps=300_000)
 
 model.save(MODEL_FILE)
 

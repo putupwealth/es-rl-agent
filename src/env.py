@@ -249,6 +249,7 @@ class ESBreakoutEnv(gym.Env):
                 exit_reason = "episode_end"
 
         self.cumulative_reward += reward
+        # Mark-to-market with current bar close after any position changes.
         unrealized_pnl = self._get_unrealized_pnl()
         total_equity = self.equity + unrealized_pnl
 

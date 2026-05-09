@@ -14,6 +14,7 @@ REPORT_FILE = "reports/es_pdh_pdl_equity_curve_v1.png"
 TRADES_FILE = "reports/es_pdh_pdl_trades_v1.csv"
 STEP_LOG_FILE = "reports/es_pdh_pdl_steps_v1.csv"
 BREAKDOWN_FILE = "reports/es_pdh_pdl_trade_breakdown_v1.csv"
+EVAL_SEED = 42
 
 
 def classify_setup(row):
@@ -57,7 +58,7 @@ env = ESBreakoutEnv(
 
 model = PPO.load(MODEL_FILE)
 
-obs, _ = env.reset(seed=42, options={"start_idx": 0})
+obs, _ = env.reset(seed=EVAL_SEED, options={"start_idx": 0})
 
 realized_equity_curve = []
 unrealized_pnl_curve = []

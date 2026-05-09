@@ -245,6 +245,7 @@ Evaluation creates:
 
 reports/es_pdh_pdl_equity_curve_v1.png
 reports/es_pdh_pdl_trades_v1.csv
+reports/es_pdh_pdl_eval_summary_v1.json
 
 Evaluation checks:
 

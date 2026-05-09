@@ -1,8 +1,8 @@
 {
   "experiment": {
-    "run_id": "es_pdh_pdl_v2_s42_20260509_081237",
-    "model_path": "models\\es_pdh_pdl_v2_s42_20260509_081237.zip",
-    "model_name": "es_pdh_pdl_v2_s42_20260509_081237.zip",
+    "run_id": "es_pdh_pdl_v2_s42_20260509_084727",
+    "model_path": "models\\es_pdh_pdl_v2_s42_20260509_084727.zip",
+    "model_name": "es_pdh_pdl_v2_s42_20260509_084727.zip",
     "evaluation_seed": 42,
     "test_rows": 246294
   },
@@ -23,7 +23,7 @@
     "direction_breakdown": {}
   },
   "actions": {
-    "0": 157674,
-    "3": 88618
+    "0": 205303,
+    "3": 40989
   }
 }

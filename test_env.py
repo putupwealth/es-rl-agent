@@ -178,7 +178,14 @@ print("Observation shape:", obs.shape)
 print("First observation:", obs)
 
 # Observation size: 17 binary + 4 continuous + 3 state = 24
-assert obs.shape == (24,), f"Expected obs shape (24,), got {obs.shape}"
+# Compute dynamically so this stays in sync with src/env.py.
+_check_env = make_env(make_base_rows())
+_expected_obs_size = (
+    len(_check_env.feature_cols)
+    + len(_check_env.continuous_feature_cols)
+    + 3  # position, unrealized_pnl/1000, bars_held/max_hold_bars
+)
+assert obs.shape == (_expected_obs_size,), f"Expected obs shape ({_expected_obs_size},), got {obs.shape}"
 print("Observation shape check passed")
 
 # Invalid LONG attempt: near PDL but no bullish breakout context.

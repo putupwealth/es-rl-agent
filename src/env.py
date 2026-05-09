@@ -53,6 +53,9 @@ class ESBreakoutEnv(gym.Env):
 
         # Continuous features normalised by a fixed divisor before being
         # appended to the observation vector.
+        # bars_since_*_break is normalised by max_hold_bars; values beyond that
+        # threshold produce outputs > 1.0, which is acceptable since the
+        # observation space is Box(-inf, inf).
         self.continuous_feature_cols = [
             ("dist_to_PDH", 50.0),
             ("dist_to_PDL", 50.0),
@@ -240,6 +243,9 @@ class ESBreakoutEnv(gym.Env):
             blocked_reason = "exit_while_flat"
 
         # Per-bar mark-to-market: primary learning signal for open positions.
+        # PnL is kept in dollar terms (same units as the commission penalty).
+        # PPO normalises advantages internally so the absolute magnitude does
+        # not hinder learning.
         if self.position != 0:
             pnl_change = (next_price - price) * self.position * self.point_value
             reward += pnl_change

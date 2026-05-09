@@ -19,6 +19,67 @@ DEFAULT_LATEST_MODEL_POINTER = "models/latest_model.txt"
 DEFAULT_REPORTS_DIR = "reports"
 DEFAULT_EVAL_SEED = 42
 
+# Required columns that must be present in steps.csv for later verification.
+STEPS_REQUIRED_COLUMNS = [
+    "action",
+    "position",
+    "attempted_entry_action",
+    "blocked_reason",
+    "valid_long_zone",
+    "valid_short_zone",
+    "trade_count",
+    "reward",
+]
+
+# Full ordered column set for trades.csv.
+TRADES_COLUMNS = [
+    "entry_time",
+    "direction",
+    "entry_price",
+    "entry_action",
+    "PDH",
+    "PDL",
+    "first_break_above_PDH",
+    "first_break_below_PDL",
+    "break_above_PDH",
+    "break_below_PDL",
+    "near_PDH",
+    "near_PDL",
+    "bias_long",
+    "bias_short",
+    "trend_1h_up",
+    "trend_4h_up",
+    "is_rth",
+    "is_eth",
+    "setup_type",
+    "bias_alignment",
+    "valid_long_zone",
+    "valid_short_zone",
+    "allowed_long_entry",
+    "allowed_short_entry",
+    "entry_rule_trigger",
+    "blocked_reason",
+    "exit_time",
+    "exit_price",
+    "pnl",
+    "exit_action",
+    "exit_reason",
+]
+
+# Fields that must be present inside the "eligibility_diagnostics" section of
+# eval_summary.json for the deterministic verifier and LLM review pipeline.
+ELIGIBILITY_DIAGNOSTICS_FIELDS = [
+    "total_steps",
+    "valid_long_zone_steps",
+    "valid_short_zone_steps",
+    "valid_long_zone_pct",
+    "valid_short_zone_pct",
+    "long_entry_attempts_on_valid",
+    "short_entry_attempts_on_valid",
+    "long_entry_attempts_on_invalid",
+    "short_entry_attempts_on_invalid",
+]
+
 
 def classify_setup(row):
     if row["first_break_above_PDH"] == 1:
@@ -98,6 +159,59 @@ def copy_latest_reports(report_dir: Path, latest_dir: Path):
     if latest_dir.exists():
         shutil.rmtree(latest_dir)
     shutil.copytree(report_dir, latest_dir)
+
+
+def build_steps_dataframe(step_logs: list) -> pd.DataFrame:
+    """Return a DataFrame for step_logs with all required columns guaranteed.
+
+    When step_logs is empty (e.g. an episode that terminates immediately) a
+    zero-row DataFrame with the full column set is returned so that steps.csv
+    always has a proper header for downstream consumers.
+    """
+    if step_logs:
+        df = pd.DataFrame(step_logs)
+    else:
+        df = pd.DataFrame(columns=STEPS_REQUIRED_COLUMNS)
+
+    for col in STEPS_REQUIRED_COLUMNS:
+        if col not in df.columns:
+            df[col] = pd.NA
+
+    return df
+
+
+def build_trades_dataframe(trades: list) -> pd.DataFrame:
+    """Return a DataFrame for the trades list with a stable column set.
+
+    When trades is empty a zero-row DataFrame with the full TRADES_COLUMNS
+    header is returned so that trades.csv always has meaningful column names.
+    """
+    if trades:
+        return pd.DataFrame(trades)
+    return pd.DataFrame(columns=TRADES_COLUMNS)
+
+
+def build_trade_breakdown(trades_df: pd.DataFrame) -> pd.DataFrame:
+    """Return a grouped trade-breakdown DataFrame.
+
+    When trades_df is empty the returned DataFrame still has the expected
+    column headers so that trade_breakdown.csv is never completely bare.
+    """
+    if trades_df.empty:
+        return pd.DataFrame(
+            columns=["direction", "setup_type", "bias_alignment", "trades", "avg_pnl", "total_pnl", "win_rate"]
+        )
+
+    return (
+        trades_df.groupby(["direction", "setup_type", "bias_alignment"], dropna=False)
+        .agg(
+            trades=("pnl", "count"),
+            avg_pnl=("pnl", "mean"),
+            total_pnl=("pnl", "sum"),
+            win_rate=("pnl", lambda x: float((x > 0).mean())),
+        )
+        .reset_index()
+    )
 
 
 def main():
@@ -284,30 +398,21 @@ def main():
     print(f"Short entry attempts on INVALID bars: {invalid_short_attempts}")
 
     report_dir.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame(step_logs).to_csv(step_log_file, index=False)
+    build_steps_dataframe(step_logs).to_csv(step_log_file, index=False)
     print(f"Saved step log: {step_log_file}")
 
-    trades_df = pd.DataFrame(trades)
+    trades_df = build_trades_dataframe(trades)
     trades_df.to_csv(trades_file, index=False)
     print(f"Saved trades: {trades_file}")
 
     if trades_df.empty:
-        breakdown_df = pd.DataFrame(columns=["direction", "setup_type", "bias_alignment", "trades", "avg_pnl", "total_pnl", "win_rate"])
         print("No completed trades logged.")
     else:
         print("\n========== TRADES ==========")
         print(trades_df)
 
-        breakdown_df = (
-            trades_df.groupby(["direction", "setup_type", "bias_alignment"], dropna=False)
-            .agg(
-                trades=("pnl", "count"),
-                avg_pnl=("pnl", "mean"),
-                total_pnl=("pnl", "sum"),
-                win_rate=("pnl", lambda x: float((x > 0).mean())),
-            )
-            .reset_index()
-        )
+    breakdown_df = build_trade_breakdown(trades_df)
+    if not breakdown_df.empty:
         print("\n========== TRADE BREAKDOWN ==========")
         print(breakdown_df)
 

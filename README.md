@@ -208,12 +208,14 @@ stop loss
 take profit
 forced exit outside RTH
 commission
-drawdown penalty
 
 Observation includes:
 
-PDH/PDL breakout features
-near-level flags
+PDH/PDL breakout features (binary)
+near-level flags (binary)
+retest-level flags (binary)
+bars since first long/short break (normalised continuous)
+distance to PDH/PDL in points (normalised continuous)
 1H/4H bias
 RTH/ETH flags
 roll-period flag
@@ -231,6 +233,9 @@ Current model:
 Algorithm: PPO
 Policy: MlpPolicy
 Library: Stable-Baselines3
+Training data: RTH-only bars (is_rth == 1, is_roll_period == 0)
+Episode length: ~390 bars (one RTH session)
+Entropy coefficient: 0.01 (explicit exploration pressure)
 
 Model output:
 
@@ -273,38 +278,22 @@ entry price
 exit price
 PnL
 entry confluence
+eligibility diagnostics (valid-zone frequency, entry-attempt rate on valid vs invalid bars)
 Current Known Behavior
 
-The first working model is not profitable yet.
+Policy consistently chose action 0 (hold) or action 3 (exit, a no-op while flat) — zero trades.
 
-Current observations:
+Root causes diagnosed and fixed in this version:
 
-Model can train successfully
-Model can evaluate successfully
-Environment risk controls prevent multi-day disasters
-Agent currently tends to short too often
-Entry rules need to be made stricter
-Next improvement should restrict long/short actions by directional breakout validity
-Next Planned Improvement
-
-Current issue:
-
-Agent can short near PDL even without a clean PDL breakdown.
-
-Next fix:
-
-Long entries only allowed near/above PDH breakout context.
-Short entries only allowed near/below PDL breakdown context.
-
-Stricter V2 logic:
-
-valid_long_zone =
-    first_break_above_PDH == 1
-    OR break_above_PDH == 1
-
-valid_short_zone =
-    first_break_below_PDL == 1
-    OR break_below_PDL == 1
+1. Duplicate no-op while flat: action 3 now carries a -0.5 penalty when position == 0.
+2. ETH training noise: training restricted to RTH-only bars.
+3. Entry gate penalties too harsh: RTH-gate penalty -2 → -0.5; zone-gate penalty -3 → -1.
+4. Ad hoc reward shaping removed: stop/TP/hold exit bonuses, bias entry bonuses, manual-exit
+   tiered bonuses, and drawdown penalty all removed; mark-to-market is now the primary signal.
+5. Low exploration: ent_coef=0.01 added to PPO.
+6. Richer observation: retest_PDH/PDL flags, bars_since_long/short_break (normalised), and
+   dist_to_PDH/PDL (normalised) added to the observation vector (24 dimensions total).
+7. Shorter episodes: max_steps capped at 390 (~one RTH session) to improve credit assignment.
 
 Later expansion:
 

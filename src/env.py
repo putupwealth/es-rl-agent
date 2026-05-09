@@ -30,6 +30,7 @@ class ESBreakoutEnv(gym.Env):
 
         self.action_space = spaces.Discrete(4)
 
+        # Binary features extracted raw from the dataframe row.
         self.feature_cols = [
             "first_break_above_PDH",
             "first_break_below_PDL",
@@ -37,6 +38,8 @@ class ESBreakoutEnv(gym.Env):
             "break_below_PDL",
             "near_PDH",
             "near_PDL",
+            "retest_PDH",
+            "retest_PDL",
             "trend_1h_up",
             "trend_1h_down",
             "trend_4h_up",
@@ -48,7 +51,16 @@ class ESBreakoutEnv(gym.Env):
             "is_roll_period",
         ]
 
-        obs_size = len(self.feature_cols) + 3
+        # Continuous features normalised by a fixed divisor before being
+        # appended to the observation vector.
+        self.continuous_feature_cols = [
+            ("dist_to_PDH", 50.0),
+            ("dist_to_PDL", 50.0),
+            ("bars_since_long_break", float(max(1, max_hold_bars))),
+            ("bars_since_short_break", float(max(1, max_hold_bars))),
+        ]
+
+        obs_size = len(self.feature_cols) + len(self.continuous_feature_cols) + 3
 
         self.observation_space = spaces.Box(
             low=-np.inf,
@@ -98,11 +110,12 @@ class ESBreakoutEnv(gym.Env):
     def _get_obs(self):
         row = self.df.iloc[self.current_idx]
         features = [row[col] for col in self.feature_cols]
+        continuous = [row[col] / scale for col, scale in self.continuous_feature_cols]
 
         unrealized_pnl = self._get_unrealized_pnl()
 
         obs = np.array(
-            features + [
+            features + continuous + [
                 self.position,
                 unrealized_pnl / 1000.0,
                 self._bars_held() / max(1, self.max_hold_bars),
@@ -149,48 +162,44 @@ class ESBreakoutEnv(gym.Env):
             row["first_break_below_PDL"] == 1 or row["break_below_PDL"] == 1
         )
 
-        # Hard exits
+        # Hard exits (position-management logic; no shaped exit bonuses)
         if self.position != 0:
             unrealized_points = (price - self.entry_price) * self.position
             bars_held = self._bars_held()
 
             if unrealized_points <= -self.stop_loss_points:
                 self._close_position(price)
-                reward -= 5
                 exit_reason = "stop_loss"
 
             elif unrealized_points >= self.take_profit_points:
                 self._close_position(price)
-                reward += 5
                 exit_reason = "take_profit"
 
             elif bars_held >= self.max_hold_bars:
                 self._close_position(price)
-                reward -= 2
                 exit_reason = "max_hold"
 
             elif row["is_rth"] == 0 and self.rth_only_entries:
                 self._close_position(price)
-                reward -= 2
                 exit_reason = "outside_rth_exit"
 
         # Entry attempts are always explicit in diagnostics, even if blocked.
         if action in [1, 2]:
             attempted_entry_action = action
 
-        # RTH-only entry gate
+        # RTH-only entry gate (soft penalty to discourage futile attempts)
         if action in [1, 2] and self.rth_only_entries and row["is_rth"] != 1:
-            reward -= 2
+            reward -= 0.5
             blocked_reason = "entry_outside_rth"
             action = 0
 
-        # Strict directional breakout gates
+        # Strict directional breakout gates (soft penalty)
         if action == 1 and valid_long_zone != 1:
-            reward -= 3
+            reward -= 1.0
             blocked_reason = "invalid_long_zone"
             action = 0
         elif action == 2 and valid_short_zone != 1:
-            reward -= 3
+            reward -= 1.0
             blocked_reason = "invalid_short_zone"
             action = 0
 
@@ -203,14 +212,6 @@ class ESBreakoutEnv(gym.Env):
                 self.trade_count += 1
                 reward -= self.commission
                 entry_rule_trigger = "long_breakout_context"
-
-                # Strong bonus for valid long breakout with bias
-                if row["bias_long"] == 1 and row["first_break_above_PDH"] == 1:
-                    reward += 5
-
-                # Mild penalty for going long against short bias
-                if row["bias_short"] == 1:
-                    reward -= 3
             else:
                 reward -= 1
                 blocked_reason = "max_trades_reached"
@@ -224,41 +225,24 @@ class ESBreakoutEnv(gym.Env):
                 self.trade_count += 1
                 reward -= self.commission
                 entry_rule_trigger = "short_breakdown_context"
-
-                # Strong bonus for valid short breakdown with bias
-                if row["bias_short"] == 1 and row["first_break_below_PDL"] == 1:
-                    reward += 5
-
-                # Mild penalty for going short against long bias
-                if row["bias_long"] == 1:
-                    reward -= 3
             else:
                 reward -= 1
                 blocked_reason = "max_trades_reached"
 
         # Manual EXIT
         elif action == 3 and self.position != 0:
-            realized = self._close_position(price)
-
-            if realized > 500:
-                reward += 5
-            elif realized > 250:
-                reward += 2
-            elif -50 < realized < 50:
-                reward -= 1
-
+            self._close_position(price)
             exit_reason = "agent_exit"
 
+        # Penalise action 3 while flat so it is not a free second no-op.
+        elif action == 3 and self.position == 0:
+            reward -= 0.5
+            blocked_reason = "exit_while_flat"
+
+        # Per-bar mark-to-market: primary learning signal for open positions.
         if self.position != 0:
             pnl_change = (next_price - price) * self.position * self.point_value
             reward += pnl_change
-
-        # Drawdown penalty
-        self.peak_equity = max(self.peak_equity, self.equity)
-        drawdown = self.peak_equity - self.equity
-
-        if drawdown > 1000:
-            reward -= 10
 
         self.current_idx += 1
 

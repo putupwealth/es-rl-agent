@@ -44,6 +44,10 @@ def main():
     # Remove roll-period data before training.
     df = df[df["is_roll_period"] == 0].reset_index(drop=True)
 
+    # Restrict training to RTH bars only: entries are RTH-gated so ETH bars
+    # just teach the policy that doing nothing is always correct.
+    df = df[df["is_rth"] == 1].reset_index(drop=True)
+
     split = int(len(df) * 0.8)
     train_df = df.iloc[:split].reset_index(drop=True)
     test_df = df.iloc[split:].reset_index(drop=True)
@@ -57,7 +61,9 @@ def main():
 
     env = ESBreakoutEnv(
         df=train_df,
-        max_steps=min(5000, len(train_df) - 2),
+        # ~390 bars = one RTH session (09:30–16:00). Shorter episodes improve
+        # credit assignment when setups are sparse.
+        max_steps=min(390, len(train_df) - 2),
         point_value=50,
         commission=5.0,
         max_trades=10,
@@ -71,6 +77,9 @@ def main():
         n_steps=2048,
         batch_size=64,
         gamma=0.99,
+        # Explicit entropy bonus to maintain exploration in a sparse-action
+        # trading environment where inactivity has zero variance reward.
+        ent_coef=0.01,
     )
 
     print("Training started...")

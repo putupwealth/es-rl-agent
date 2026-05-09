@@ -1,4 +1,22 @@
+import numpy as np
 import pandas as pd
+
+
+def _bars_since_first_event(series: pd.Series) -> pd.Series:
+    """Return bars since the first 1-valued event within a group.
+
+    Returns 0 before the event occurs, 1 on the event bar, 2 on the next bar,
+    and so on.  If the event never occurs in the group every value is 0.
+    """
+    out = np.zeros(len(series), dtype=np.int32)
+    count = 0
+    for i, v in enumerate(series.values):
+        if v == 1:
+            count = 1
+        elif count > 0:
+            count += 1
+        out[i] = count
+    return pd.Series(out, index=series.index)
 
 
 def add_pdh_pdl(df: pd.DataFrame) -> pd.DataFrame:
@@ -78,5 +96,15 @@ def add_breakout_features(df: pd.DataFrame) -> pd.DataFrame:
     (df["break_below_PDL"] == 1) &
     (df["near_PDL"] == 1)
     ).astype(int)
+
+    # Bars since first breakout event for each day (0 = no event yet, 1+ = count)
+    df["bars_since_long_break"] = (
+        df.groupby("date", group_keys=False)["first_break_above_PDH"]
+        .apply(_bars_since_first_event)
+    )
+    df["bars_since_short_break"] = (
+        df.groupby("date", group_keys=False)["first_break_below_PDL"]
+        .apply(_bars_since_first_event)
+    )
 
     return df

@@ -2,6 +2,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from stable_baselines3 import PPO
 from pathlib import Path
+import json
 
 from src.levels import add_pdh_pdl, add_breakout_features
 from src.features import add_htf_bias
@@ -14,15 +15,26 @@ REPORT_FILE = "reports/es_pdh_pdl_equity_curve_v1.png"
 TRADES_FILE = "reports/es_pdh_pdl_trades_v1.csv"
 STEP_LOG_FILE = "reports/es_pdh_pdl_steps_v1.csv"
 BREAKDOWN_FILE = "reports/es_pdh_pdl_trade_breakdown_v1.csv"
+SUMMARY_FILE = "reports/es_pdh_pdl_eval_summary_v1.json"
 EVAL_SEED = 42
 
 
 def classify_setup(row):
     if row["first_break_above_PDH"] == 1:
-        return "PDH_breakout"
+        return "first_breakout_above_PDH"
+    if row["break_above_PDH"] == 1:
+        return "breakout_above_PDH"
     if row["first_break_below_PDL"] == 1:
-        return "PDL_breakdown"
-    return "other"
+        return "first_breakdown_below_PDL"
+    if row["break_below_PDL"] == 1:
+        return "breakdown_below_PDL"
+    if row["near_PDH"] == 1 and row["near_PDL"] == 1:
+        return "near_PDH_PDL_no_breakout"
+    if row["near_PDH"] == 1:
+        return "near_PDH_no_breakout"
+    if row["near_PDL"] == 1:
+        return "near_PDL_no_breakout"
+    return "no_level_context"
 
 
 def classify_bias_alignment(position, row):
@@ -107,6 +119,12 @@ while not done:
             "is_eth": row["is_eth"],
             "setup_type": classify_setup(row),
             "bias_alignment": classify_bias_alignment(new_position, row),
+            "valid_long_zone": info.get("valid_long_zone"),
+            "valid_short_zone": info.get("valid_short_zone"),
+            "allowed_long_entry": info.get("allowed_long_entry"),
+            "allowed_short_entry": info.get("allowed_short_entry"),
+            "entry_rule_trigger": info.get("entry_rule_trigger"),
+            "blocked_reason": info.get("blocked_reason"),
         }
 
     # Exit detected
@@ -140,6 +158,13 @@ while not done:
         "unrealized_pnl": info["unrealized_pnl"],
         "total_equity": info["total_equity"],
         "exit_reason": info["exit_reason"],
+        "valid_long_zone": info.get("valid_long_zone"),
+        "valid_short_zone": info.get("valid_short_zone"),
+        "allowed_long_entry": info.get("allowed_long_entry"),
+        "allowed_short_entry": info.get("allowed_short_entry"),
+        "entry_rule_trigger": info.get("entry_rule_trigger"),
+        "blocked_reason": info.get("blocked_reason"),
+        "attempted_entry_action": info.get("attempted_entry_action"),
     })
 
     done = terminated or truncated
@@ -180,6 +205,50 @@ if trades:
     print(f"Saved breakdown: {BREAKDOWN_FILE}")
 else:
     print("No completed trades logged.")
+
+summary = {
+    "experiment": {
+        "model_path": MODEL_FILE,
+        "model_name": Path(MODEL_FILE).name,
+        "evaluation_seed": EVAL_SEED,
+        "test_rows": int(len(test_df)),
+    },
+    "performance": {
+        "final_realized_equity": float(realized_equity_curve[-1]) if realized_equity_curve else 0.0,
+        "final_total_equity": float(total_equity_curve[-1]) if total_equity_curve else 0.0,
+        "cumulative_reward": float(cumulative_reward),
+    },
+    "trades": {
+        "total_trades": int(len(trades)),
+        "long_trades": int(sum(1 for t in trades if t["direction"] == "LONG")),
+        "short_trades": int(sum(1 for t in trades if t["direction"] == "SHORT")),
+    },
+    "actions": {str(k): int(v) for k, v in action_counts.items()},
+}
+
+if trades:
+    trades_df = pd.DataFrame(trades)
+    summary["trades"].update({
+        "win_rate": float((trades_df["pnl"] > 0).mean()),
+        "total_pnl": float(trades_df["pnl"].sum()),
+        "avg_pnl": float(trades_df["pnl"].mean()),
+        "setup_breakdown": trades_df["setup_type"].value_counts(dropna=False).to_dict(),
+        "bias_alignment_breakdown": trades_df["bias_alignment"].value_counts(dropna=False).to_dict(),
+        "direction_breakdown": trades_df["direction"].value_counts(dropna=False).to_dict(),
+    })
+else:
+    summary["trades"].update({
+        "win_rate": 0.0,
+        "total_pnl": 0.0,
+        "avg_pnl": 0.0,
+        "setup_breakdown": {},
+        "bias_alignment_breakdown": {},
+        "direction_breakdown": {},
+    })
+
+with open(SUMMARY_FILE, "w", encoding="utf-8") as f:
+    json.dump(summary, f, indent=2)
+print(f"Saved summary: {SUMMARY_FILE}")
 
 plt.figure(figsize=(12, 5))
 plt.plot(realized_equity_curve, label="Realized equity")

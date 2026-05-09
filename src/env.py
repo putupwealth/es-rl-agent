@@ -135,6 +135,19 @@ class ESBreakoutEnv(gym.Env):
         terminated = False
         truncated = False
         exit_reason = None
+        entry_rule_trigger = None
+        blocked_reason = None
+        attempted_entry_action = None
+
+        # V2 entry context gates:
+        # - LONGs are only valid in bullish PDH breakout context.
+        # - SHORTs are only valid in bearish PDL breakdown context.
+        valid_long_zone = int(
+            row["first_break_above_PDH"] == 1 or row["break_above_PDH"] == 1
+        )
+        valid_short_zone = int(
+            row["first_break_below_PDL"] == 1 or row["break_below_PDL"] == 1
+        )
 
         # Hard exits
         if self.position != 0:
@@ -161,21 +174,24 @@ class ESBreakoutEnv(gym.Env):
                 reward -= 2
                 exit_reason = "outside_rth_exit"
 
-        near_or_event = (
-            row["near_PDH"] == 1 or
-            row["near_PDL"] == 1 or
-            row["first_break_above_PDH"] == 1 or
-            row["first_break_below_PDL"] == 1
-        )
+        # Entry attempts are always explicit in diagnostics, even if blocked.
+        if action in [1, 2]:
+            attempted_entry_action = action
 
-        # RTH-only entries
-        if self.rth_only_entries and row["is_rth"] != 1 and action in [1, 2]:
+        # RTH-only entry gate
+        if action in [1, 2] and self.rth_only_entries and row["is_rth"] != 1:
             reward -= 2
+            blocked_reason = "entry_outside_rth"
             action = 0
 
-        # Penalize entries away from PDH/PDL
-        if action in [1, 2] and not near_or_event:
-            reward -= 2
+        # Strict directional breakout gates
+        if action == 1 and valid_long_zone != 1:
+            reward -= 3
+            blocked_reason = "invalid_long_zone"
+            action = 0
+        elif action == 2 and valid_short_zone != 1:
+            reward -= 3
+            blocked_reason = "invalid_short_zone"
             action = 0
 
         # LONG entry
@@ -186,6 +202,7 @@ class ESBreakoutEnv(gym.Env):
                 self.entry_idx = self.current_idx
                 self.trade_count += 1
                 reward -= self.commission
+                entry_rule_trigger = "long_breakout_context"
 
                 # Strong bonus for valid long breakout with bias
                 if row["bias_long"] == 1 and row["first_break_above_PDH"] == 1:
@@ -194,6 +211,9 @@ class ESBreakoutEnv(gym.Env):
                 # Mild penalty for going long against short bias
                 if row["bias_short"] == 1:
                     reward -= 3
+            else:
+                reward -= 1
+                blocked_reason = "max_trades_reached"
 
         # SHORT entry
         elif action == 2 and self.position == 0:
@@ -203,6 +223,7 @@ class ESBreakoutEnv(gym.Env):
                 self.entry_idx = self.current_idx
                 self.trade_count += 1
                 reward -= self.commission
+                entry_rule_trigger = "short_breakdown_context"
 
                 # Strong bonus for valid short breakdown with bias
                 if row["bias_short"] == 1 and row["first_break_below_PDL"] == 1:
@@ -211,6 +232,9 @@ class ESBreakoutEnv(gym.Env):
                 # Mild penalty for going short against long bias
                 if row["bias_long"] == 1:
                     reward -= 3
+            else:
+                reward -= 1
+                blocked_reason = "max_trades_reached"
 
         # Manual EXIT
         elif action == 3 and self.position != 0:
@@ -263,6 +287,17 @@ class ESBreakoutEnv(gym.Env):
             "position": self.position,
             "trade_count": self.trade_count,
             "exit_reason": exit_reason,
+            "valid_long_zone": valid_long_zone,
+            "valid_short_zone": valid_short_zone,
+            "allowed_long_entry": int(
+                self.position == 1 and entry_rule_trigger == "long_breakout_context"
+            ),
+            "allowed_short_entry": int(
+                self.position == -1 and entry_rule_trigger == "short_breakdown_context"
+            ),
+            "entry_rule_trigger": entry_rule_trigger,
+            "blocked_reason": blocked_reason,
+            "attempted_entry_action": attempted_entry_action,
         }
 
         return self._get_obs(), reward, terminated, truncated, info

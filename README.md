@@ -6,7 +6,7 @@ A reinforcement learning trading research project for ES futures using key marke
 
 Build a structure-first RL trading agent that learns to trade fewer, higher-quality setups around important levels.
 
-Current Version 1 focus:
+Current Version 2 focus:
 
 - ES futures
 - PDH / PDL breakout behavior
@@ -234,7 +234,15 @@ Library: Stable-Baselines3
 
 Model output:
 
-models/es_pdh_pdl_ppo_v1.zip
+models/{run_id}.zip
+
+Default run ID format:
+
+es_pdh_pdl_v2_s42_YYYYMMDD_HHMMSS
+
+Latest trained model pointer:
+
+models/latest_model.txt
 Evaluation
 
 Run:
@@ -243,9 +251,15 @@ python evaluate.py
 
 Evaluation creates:
 
-reports/es_pdh_pdl_equity_curve_v1.png
-reports/es_pdh_pdl_trades_v1.csv
-reports/es_pdh_pdl_eval_summary_v1.json
+reports/{run_id}/equity_curve.png
+reports/{run_id}/trades.csv
+reports/{run_id}/steps.csv
+reports/{run_id}/trade_breakdown.csv
+reports/{run_id}/eval_summary.json
+
+Latest evaluation snapshot:
+
+reports/latest/
 
 Evaluation checks:
 

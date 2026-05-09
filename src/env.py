@@ -61,8 +61,11 @@ class ESBreakoutEnv(gym.Env):
         super().reset(seed=seed)
 
         max_start = len(self.df) - self.max_steps - 2
+        if max_start < 0:
+            raise ValueError("max_steps is too large for the provided dataframe length.")
         requested_start = None if options is None else options.get("start_idx")
         if requested_start is None:
+            # Upper bound is exclusive, so use max_start + 1 to allow max_start.
             self.start_idx = int(self.np_random.integers(0, max_start + 1))
         else:
             self.start_idx = int(np.clip(requested_start, 0, max_start))

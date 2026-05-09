@@ -25,7 +25,7 @@ train_df = df.iloc[:split].reset_index(drop=True)
 test_df = df.iloc[split:].reset_index(drop=True)
 
 if len(train_df) < 100:
-    raise ValueError("Not enough rows in training split to run PPO training.")
+    raise ValueError("Not enough rows in training split for RL training.")
 
 print(f"Training rows: {len(train_df):,}")
 print(f"Holdout rows: {len(test_df):,}")

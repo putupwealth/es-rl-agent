@@ -15,6 +15,23 @@ TRADES_FILE = "reports/es_pdh_pdl_trades_v1.csv"
 STEP_LOG_FILE = "reports/es_pdh_pdl_steps_v1.csv"
 BREAKDOWN_FILE = "reports/es_pdh_pdl_trade_breakdown_v1.csv"
 
+
+def classify_setup(row):
+    if row["first_break_above_PDH"] == 1:
+        return "PDH_breakout"
+    if row["first_break_below_PDL"] == 1:
+        return "PDL_breakdown"
+    return "other"
+
+
+def classify_bias_alignment(position, row):
+    if (position == 1 and row["bias_long"] == 1) or (position == -1 and row["bias_short"] == 1):
+        return "aligned"
+    if (position == 1 and row["bias_short"] == 1) or (position == -1 and row["bias_long"] == 1):
+        return "counter"
+    return "neutral"
+
+
 print("Loading data...")
 df = pd.read_csv(DATA_FILE)
 
@@ -87,17 +104,8 @@ while not done:
             "trend_4h_up": row["trend_4h_up"],
             "is_rth": row["is_rth"],
             "is_eth": row["is_eth"],
-            "setup_type": (
-                "PDH_breakout"
-                if row["first_break_above_PDH"] == 1
-                else "PDL_breakdown" if row["first_break_below_PDL"] == 1 else "other"
-            ),
-            "bias_alignment": (
-                "aligned"
-                if ((new_position == 1 and row["bias_long"] == 1) or (new_position == -1 and row["bias_short"] == 1))
-                else "counter" if ((new_position == 1 and row["bias_short"] == 1) or (new_position == -1 and row["bias_long"] == 1))
-                else "neutral"
-            ),
+            "setup_type": classify_setup(row),
+            "bias_alignment": classify_bias_alignment(new_position, row),
         }
 
     # Exit detected

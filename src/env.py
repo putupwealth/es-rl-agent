@@ -10,7 +10,7 @@ class ESBreakoutEnv(gym.Env):
         max_steps=5000,
         point_value=50,
         commission=5.0,
-        max_trades=3,
+        max_trades=10,
         max_hold_bars=96,
         stop_loss_points=10,
         take_profit_points=25,
@@ -38,7 +38,9 @@ class ESBreakoutEnv(gym.Env):
             "near_PDH",
             "near_PDL",
             "trend_1h_up",
+            "trend_1h_down",
             "trend_4h_up",
+            "trend_4h_down",
             "bias_long",
             "bias_short",
             "is_rth",
@@ -59,7 +61,11 @@ class ESBreakoutEnv(gym.Env):
         super().reset(seed=seed)
 
         max_start = len(self.df) - self.max_steps - 2
-        self.start_idx = int(self.np_random.integers(0, max_start))
+        requested_start = None if options is None else options.get("start_idx")
+        if requested_start is None:
+            self.start_idx = int(self.np_random.integers(0, max_start + 1))
+        else:
+            self.start_idx = int(np.clip(requested_start, 0, max_start))
         self.current_idx = self.start_idx
         self.end_idx = self.start_idx + self.max_steps
 
@@ -70,6 +76,7 @@ class ESBreakoutEnv(gym.Env):
         self.trade_count = 0
         self.equity = 0.0
         self.peak_equity = 0.0
+        self.cumulative_reward = 0.0
 
         return self._get_obs(), {}
 
@@ -126,34 +133,29 @@ class ESBreakoutEnv(gym.Env):
         truncated = False
         exit_reason = None
 
-        # Reward/penalty while holding position
-        if self.position != 0:
-            pnl_change = (next_price - price) * self.position * self.point_value
-            reward += pnl_change
-
         # Hard exits
         if self.position != 0:
             unrealized_points = (price - self.entry_price) * self.position
             bars_held = self._bars_held()
 
             if unrealized_points <= -self.stop_loss_points:
-                realized = self._close_position(price)
-                reward += realized - 50
+                self._close_position(price)
+                reward -= 5
                 exit_reason = "stop_loss"
 
             elif unrealized_points >= self.take_profit_points:
-                realized = self._close_position(price)
-                reward += realized + 50
+                self._close_position(price)
+                reward += 5
                 exit_reason = "take_profit"
 
             elif bars_held >= self.max_hold_bars:
-                realized = self._close_position(price)
-                reward += realized - 10
+                self._close_position(price)
+                reward -= 2
                 exit_reason = "max_hold"
 
             elif row["is_rth"] == 0 and self.rth_only_entries:
-                realized = self._close_position(price)
-                reward += realized - 10
+                self._close_position(price)
+                reward -= 2
                 exit_reason = "outside_rth_exit"
 
         near_or_event = (
@@ -165,12 +167,12 @@ class ESBreakoutEnv(gym.Env):
 
         # RTH-only entries
         if self.rth_only_entries and row["is_rth"] != 1 and action in [1, 2]:
-            reward -= 5
+            reward -= 2
             action = 0
 
         # Penalize entries away from PDH/PDL
         if action in [1, 2] and not near_or_event:
-            reward -= 5
+            reward -= 2
             action = 0
 
         # LONG entry
@@ -184,11 +186,11 @@ class ESBreakoutEnv(gym.Env):
 
                 # Strong bonus for valid long breakout with bias
                 if row["bias_long"] == 1 and row["first_break_above_PDH"] == 1:
-                    reward += 50
+                    reward += 5
 
                 # Mild penalty for going long against short bias
                 if row["bias_short"] == 1:
-                    reward -= 15
+                    reward -= 3
 
         # SHORT entry
         elif action == 2 and self.position == 0:
@@ -201,36 +203,35 @@ class ESBreakoutEnv(gym.Env):
 
                 # Strong bonus for valid short breakdown with bias
                 if row["bias_short"] == 1 and row["first_break_below_PDL"] == 1:
-                    reward += 50
+                    reward += 5
 
                 # Mild penalty for going short against long bias
                 if row["bias_long"] == 1:
-                    reward -= 15
+                    reward -= 3
 
         # Manual EXIT
         elif action == 3 and self.position != 0:
             realized = self._close_position(price)
-            reward += realized
 
             if realized > 500:
-                reward += 50
+                reward += 5
             elif realized > 250:
-                reward += 20
+                reward += 2
             elif -50 < realized < 50:
-                reward -= 10
+                reward -= 1
 
             exit_reason = "agent_exit"
 
-        # No reward for waiting now
-        if action == 0 and not near_or_event and self.position == 0:
-            reward += 0.0
+        if self.position != 0:
+            pnl_change = (next_price - price) * self.position * self.point_value
+            reward += pnl_change
 
         # Drawdown penalty
         self.peak_equity = max(self.peak_equity, self.equity)
         drawdown = self.peak_equity - self.equity
 
         if drawdown > 1000:
-            reward -= 50
+            reward -= 10
 
         self.current_idx += 1
 
@@ -239,12 +240,22 @@ class ESBreakoutEnv(gym.Env):
 
             if self.position != 0:
                 final_price = self.df.iloc[self.current_idx]["close"]
-                realized = self._close_position(final_price)
-                reward += realized
+                final_pnl_change = (final_price - price) * self.position * self.point_value
+                reward += final_pnl_change
+                self._close_position(final_price)
                 exit_reason = "episode_end"
+
+        self.cumulative_reward += reward
+        unrealized_pnl = self._get_unrealized_pnl()
+        total_equity = self.equity + unrealized_pnl
 
         info = {
             "equity": self.equity,
+            "realized_equity": self.equity,
+            "unrealized_pnl": unrealized_pnl,
+            "total_equity": total_equity,
+            "reward": reward,
+            "cumulative_reward": self.cumulative_reward,
             "position": self.position,
             "trade_count": self.trade_count,
             "exit_reason": exit_reason,

@@ -20,14 +20,22 @@ df = add_htf_bias(df)
 # Remove roll-period data for V1
 df = df[df["is_roll_period"] == 0].reset_index(drop=True)
 
-print(f"Training rows: {len(df):,}")
+split = int(len(df) * 0.8)
+train_df = df.iloc[:split].reset_index(drop=True)
+test_df = df.iloc[split:].reset_index(drop=True)
+
+if len(train_df) < 100:
+    raise ValueError("Not enough rows in training split to run PPO training.")
+
+print(f"Training rows: {len(train_df):,}")
+print(f"Holdout rows: {len(test_df):,}")
 
 env = ESBreakoutEnv(
-    df=df,
-    max_steps=5000,
+    df=train_df,
+    max_steps=min(5000, len(train_df) - 2),
     point_value=50,
     commission=5.0,
-    max_trades=3,
+    max_trades=10,
 )
 
 model = PPO(

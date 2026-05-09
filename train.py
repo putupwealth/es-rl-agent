@@ -41,7 +41,7 @@ def main():
     df = add_breakout_features(df)
     df = add_htf_bias(df)
 
-    # Remove roll-period data for V1
+    # Remove roll-period data before training.
     df = df[df["is_roll_period"] == 0].reset_index(drop=True)
 
     split = int(len(df) * 0.8)

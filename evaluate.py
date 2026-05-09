@@ -337,7 +337,7 @@ def main():
     plt.plot(realized_equity_curve, label="Realized equity")
     plt.plot(unrealized_pnl_curve, label="Unrealized PnL")
     plt.plot(total_equity_curve, label="Total equity (MTM)")
-    plt.title(f"ES PDH/PDL V2 - Equity Curves ({run_id})")
+    plt.title(f"ES PDH/PDL - Equity Curves ({run_id})")
     plt.xlabel("Step")
     plt.ylabel("Equity ($)")
     plt.grid(True)

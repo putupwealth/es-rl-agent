@@ -254,6 +254,35 @@ def main():
     print("Action counts:", action_counts)
     print(f"Logged trades: {len(trades)}")
 
+    # Eligibility diagnostics
+    total_steps = len(step_logs)
+    valid_long_steps = sum(1 for s in step_logs if s.get("valid_long_zone") == 1)
+    valid_short_steps = sum(1 for s in step_logs if s.get("valid_short_zone") == 1)
+    entry_attempts_on_valid_long = sum(
+        1 for s in step_logs
+        if s.get("valid_long_zone") == 1 and s.get("attempted_entry_action") == 1
+    )
+    entry_attempts_on_valid_short = sum(
+        1 for s in step_logs
+        if s.get("valid_short_zone") == 1 and s.get("attempted_entry_action") == 2
+    )
+    invalid_long_attempts = sum(
+        1 for s in step_logs
+        if s.get("valid_long_zone") == 0 and s.get("attempted_entry_action") == 1
+    )
+    invalid_short_attempts = sum(
+        1 for s in step_logs
+        if s.get("valid_short_zone") == 0 and s.get("attempted_entry_action") == 2
+    )
+    print("\n========== ELIGIBILITY DIAGNOSTICS ==========")
+    print(f"Total steps: {total_steps}")
+    print(f"Valid long zone steps: {valid_long_steps} ({valid_long_steps / max(1, total_steps):.1%})")
+    print(f"Valid short zone steps: {valid_short_steps} ({valid_short_steps / max(1, total_steps):.1%})")
+    print(f"Long entry attempts on valid bars: {entry_attempts_on_valid_long}")
+    print(f"Short entry attempts on valid bars: {entry_attempts_on_valid_short}")
+    print(f"Long entry attempts on INVALID bars: {invalid_long_attempts}")
+    print(f"Short entry attempts on INVALID bars: {invalid_short_attempts}")
+
     report_dir.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(step_logs).to_csv(step_log_file, index=False)
     print(f"Saved step log: {step_log_file}")
@@ -304,6 +333,17 @@ def main():
             "short_trades": int(sum(1 for t in trades if t["direction"] == "SHORT")),
         },
         "actions": {str(k): int(v) for k, v in action_counts.items()},
+        "eligibility_diagnostics": {
+            "total_steps": total_steps,
+            "valid_long_zone_steps": valid_long_steps,
+            "valid_short_zone_steps": valid_short_steps,
+            "valid_long_zone_pct": round(valid_long_steps / max(1, total_steps), 4),
+            "valid_short_zone_pct": round(valid_short_steps / max(1, total_steps), 4),
+            "long_entry_attempts_on_valid": entry_attempts_on_valid_long,
+            "short_entry_attempts_on_valid": entry_attempts_on_valid_short,
+            "long_entry_attempts_on_invalid": invalid_long_attempts,
+            "short_entry_attempts_on_invalid": invalid_short_attempts,
+        },
     }
 
     if trades_df.empty:

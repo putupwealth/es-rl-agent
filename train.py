@@ -1,3 +1,8 @@
+"""
+Commands:
+    python train.py
+"""
+
 import pandas as pd
 from stable_baselines3 import PPO
 from datetime import datetime

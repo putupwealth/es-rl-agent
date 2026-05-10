@@ -1,3 +1,10 @@
+"""
+Commands:
+    python evaluate.py
+    python evaluate.py --model-file models/<model_name>.zip
+    python evaluate.py --run-id custom_run_name
+"""
+
 import argparse
 import json
 from datetime import datetime

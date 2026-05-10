@@ -19,13 +19,27 @@ from scripts.build_llm_input_packet import (
     write_packet,
 )
 
+INVALID_JSON_STRING = "{bad json"
+DEFAULT_VERDICT = "PASS"
+DEFAULT_DIAGNOSIS = "behaviorally_alive"
+DEFAULT_REASON = "ok"
+
 
 def _write_json(path: Path, payload: dict):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(payload, f)
 
 
-def _make_verification(*, verdict="PASS", diagnosis="behaviorally_alive", reason="ok", metrics=None):
+def _make_verification(
+    *,
+    verdict=DEFAULT_VERDICT,
+    diagnosis=DEFAULT_DIAGNOSIS,
+    reason=DEFAULT_REASON,
+    metrics=None,
+):
+    if metrics is None:
+        metrics = {"total_steps": 100, "total_trades": 2}
+
     return {
         "version": "1.0.0",
         "run_id": "run-123",
@@ -33,7 +47,7 @@ def _make_verification(*, verdict="PASS", diagnosis="behaviorally_alive", reason
         "verdict": verdict,
         "diagnosis": diagnosis,
         "reason": reason,
-        "metrics": metrics or {"total_steps": 100, "total_trades": 2},
+        "metrics": metrics,
     }
 
 
@@ -78,13 +92,13 @@ def _make_trades():
     )
 
 
-def _write_report(tmp: str, *, with_verification=True, malformed_verification=False, steps_rows=5, empty_trades=False):
-    report_dir = Path(tmp) / "run-123"
+def _write_report(temp_dir: str, *, with_verification=True, malformed_verification=False, steps_rows=5, empty_trades=False):
+    report_dir = Path(temp_dir) / "run-123"
     report_dir.mkdir(parents=True, exist_ok=True)
 
     if with_verification:
         if malformed_verification:
-            (report_dir / "verification.json").write_text("{bad json", encoding="utf-8")
+            (report_dir / "verification.json").write_text(INVALID_JSON_STRING, encoding="utf-8")
         else:
             _write_json(report_dir / "verification.json", _make_verification())
 

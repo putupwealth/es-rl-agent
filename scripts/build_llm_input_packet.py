@@ -15,6 +15,7 @@ import math
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any, Dict, List
 
 import pandas as pd
 
@@ -33,6 +34,7 @@ STEP_SAMPLE_COLUMNS = [
     "trade_count",
     "reward",
 ]
+MALFORMED_METRICS_ERROR_MSG = "verification.json contains malformed metrics"
 
 
 def _to_json_value(value):
@@ -52,6 +54,12 @@ def _non_empty_mask(series: pd.Series) -> pd.Series:
 
 
 def _attempt_mask(series: pd.Series) -> pd.Series:
+    """Return a boolean mask for rows that represent entry attempts.
+
+    Attempted entries are treated as present when:
+    - numeric values are 1 or 2, or
+    - the value is non-numeric but non-empty text.
+    """
     numeric = pd.to_numeric(series, errors="coerce")
     numeric_attempt = numeric.isin([1, 2])
     textual_attempt = numeric.isna() & _non_empty_mask(series)
@@ -63,7 +71,7 @@ def load_inputs(report_dir: Path):
     summary = None
     steps_df = None
     trades_df = None
-    errors: list[str] = []
+    errors: List[str] = []
 
     verification_path = report_dir / "verification.json"
     summary_path = report_dir / "eval_summary.json"
@@ -119,7 +127,7 @@ def aggregate_blocked_reason_counts(steps_df: pd.DataFrame) -> dict:
     return {reason: int(count) for reason, count in counts.items()}
 
 
-def _rows_to_records(df: pd.DataFrame) -> list[dict]:
+def _rows_to_records(df: pd.DataFrame) -> List[Dict[str, Any]]:
     columns = [col for col in STEP_SAMPLE_COLUMNS if col in df.columns]
     records = []
 
@@ -136,6 +144,13 @@ def _rows_to_records(df: pd.DataFrame) -> list[dict]:
 
 
 def extract_step_samples(steps_df: pd.DataFrame, max_rows: int = MAX_SAMPLE_ROWS_PER_CATEGORY) -> dict:
+    """Extract bounded, compact step samples used as LLM evidence.
+
+    Categories:
+    - valid_zone_rows: rows where either long or short valid zone is true
+    - attempted_entry_rows: rows with attempted entry actions
+    - blocked_reason_rows: rows with non-empty blocked reasons
+    """
     samples = {
         "valid_zone_rows": [],
         "attempted_entry_rows": [],
@@ -177,6 +192,7 @@ def extract_step_samples(steps_df: pd.DataFrame, max_rows: int = MAX_SAMPLE_ROWS
 
 
 def summarize_trades(trades_df: pd.DataFrame) -> dict:
+    """Build a compact trade summary from trades.csv data."""
     if trades_df is None or trades_df.empty:
         return {
             "total_trades": 0,
@@ -195,7 +211,10 @@ def summarize_trades(trades_df: pd.DataFrame) -> dict:
         else pd.Series([0.0] * len(trades_df))
     )
 
-    direction = trades_df["direction"].astype(str).str.upper() if "direction" in trades_df.columns else pd.Series([], dtype="object")
+    if "direction" in trades_df.columns:
+        direction = trades_df["direction"].astype(str).str.upper()
+    else:
+        direction = pd.Series([], dtype="object")
 
     total_trades = int(len(trades_df))
     total_pnl = float(pnl.sum())
@@ -213,6 +232,7 @@ def summarize_trades(trades_df: pd.DataFrame) -> dict:
 
 
 def build_packet(report_dir_str: str) -> dict:
+    """Build the compact `llm_input_packet.json` payload for one report directory."""
     report_dir = Path(report_dir_str)
     run_id = report_dir.name
 
@@ -241,7 +261,7 @@ def build_packet(report_dir_str: str) -> dict:
         reason = "; ".join(errors) if errors else ""
 
     if not isinstance(metrics, dict):
-        errors.append("verification.json contains malformed metrics")
+        errors.append(MALFORMED_METRICS_ERROR_MSG)
         metrics = {}
 
     packet = {
@@ -256,7 +276,7 @@ def build_packet(report_dir_str: str) -> dict:
         "blocked_reason_counts": aggregate_blocked_reason_counts(steps_df),
         "step_samples": extract_step_samples(steps_df),
         "trade_summary": summarize_trades(trades_df),
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(tz=timezone.utc).isoformat(),
     }
 
     if errors:

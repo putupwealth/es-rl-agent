@@ -1,0 +1,3 @@
+direction,setup_type,bias_alignment,trades,avg_pnl,total_pnl,win_rate
+SHORT,breakdown_below_PDL,aligned,1,1407.5,1407.5,1.0
+SHORT,first_breakdown_below_PDL,aligned,1,-855.0,-855.0,0.0

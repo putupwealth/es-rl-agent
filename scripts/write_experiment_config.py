@@ -101,51 +101,53 @@ def main():
 
         output_path = report_dir / args.output_file
 
-        payload = {
-            "written_at_utc": datetime.now(timezone.utc).isoformat(),
-            "report_dir": str(report_dir),
-            "run_id": args.run_id or report_dir.name,
-            "experiment_name": args.experiment_name,
-            "training": compact_dict(
-                {
-                    "seed": args.seed,
-                    "total_timesteps": args.total_timesteps,
-                    "data_file": args.data_file,
-                    "model_dir": args.model_dir,
-                    "model_file": args.model_file,
-                    "policy_version": args.policy_version,
-                }
-            ),
-            "versions": compact_dict(
-                {
-                    "reward_version": args.reward_version,
-                    "feature_version": args.feature_version,
-                    "environment_version": args.environment_version,
-                }
-            ),
-            "rules": compact_dict(
-                {
-                    "entry_window": args.entry_window,
-                    "max_trades_per_day": args.max_trades_per_day,
-                    "max_hold_bars": args.max_hold_bars,
-                    "uses_rth_filter": args.uses_rth_filter if args.uses_rth_filter else None,
-                    "uses_zone_gating": args.uses_zone_gating if args.uses_zone_gating else None,
-                    "uses_time_features": args.uses_time_features if args.uses_time_features else None,
-                }
-            ),
-            "reward": compact_dict(
-                {
-                    "commission": args.commission,
-                    "invalid_action_penalty": args.invalid_action_penalty,
-                    "hold_penalty": args.hold_penalty,
-                    "overtrade_penalty": args.overtrade_penalty,
-                    "drawdown_penalty": args.drawdown_penalty,
-                    "stop_loss": args.stop_loss,
-                    "take_profit": args.take_profit,
-                }
-            ),
-            "notes": args.notes,
-        }
+        payload = compact_dict(
+            {
+                "written_at_utc": datetime.now(timezone.utc).isoformat(),
+                "report_dir": str(report_dir),
+                "run_id": args.run_id or report_dir.name,
+                "experiment_name": args.experiment_name,
+                "training": compact_dict(
+                    {
+                        "seed": args.seed,
+                        "total_timesteps": args.total_timesteps,
+                        "data_file": args.data_file,
+                        "model_dir": args.model_dir,
+                        "model_file": args.model_file,
+                        "policy_version": args.policy_version,
+                    }
+                ),
+                "versions": compact_dict(
+                    {
+                        "reward_version": args.reward_version,
+                        "feature_version": args.feature_version,
+                        "environment_version": args.environment_version,
+                    }
+                ),
+                "rules": compact_dict(
+                    {
+                        "entry_window": args.entry_window,
+                        "max_trades_per_day": args.max_trades_per_day,
+                        "max_hold_bars": args.max_hold_bars,
+                        "uses_rth_filter": args.uses_rth_filter if args.uses_rth_filter else None,
+                        "uses_zone_gating": args.uses_zone_gating if args.uses_zone_gating else None,
+                        "uses_time_features": args.uses_time_features if args.uses_time_features else None,
+                    }
+                ),
+                "reward": compact_dict(
+                    {
+                        "commission": args.commission,
+                        "invalid_action_penalty": args.invalid_action_penalty,
+                        "hold_penalty": args.hold_penalty,
+                        "overtrade_penalty": args.overtrade_penalty,
+                        "drawdown_penalty": args.drawdown_penalty,
+                        "stop_loss": args.stop_loss,
+                        "take_profit": args.take_profit,
+                    }
+                ),
+                "notes": args.notes,
+            }
+        )
 
         output_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         print(f"Written: {output_path}")

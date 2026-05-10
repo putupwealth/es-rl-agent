@@ -1,0 +1,48 @@
+{
+  "experiment": {
+    "run_id": "es_pdh_pdl_v2_s42_20260509_131807",
+    "model_path": "models\\es_pdh_pdl_v2_s42_20260509_131807.zip",
+    "model_name": "es_pdh_pdl_v2_s42_20260509_131807.zip",
+    "evaluation_seed": 42,
+    "test_rows": 246294
+  },
+  "performance": {
+    "final_realized_equity": 1412.5,
+    "final_total_equity": 1412.5,
+    "cumulative_reward": -69328.0
+  },
+  "trades": {
+    "total_trades": 9,
+    "long_trades": 9,
+    "short_trades": 0,
+    "win_rate": 0.8888888888888888,
+    "total_pnl": 2105.0,
+    "avg_pnl": 233.88888888888889,
+    "setup_breakdown": {
+      "breakout_above_PDH": 9
+    },
+    "bias_alignment_breakdown": {
+      "aligned": 9
+    },
+    "direction_breakdown": {
+      "LONG": 9
+    }
+  },
+  "actions": {
+    "0": 133962,
+    "1": 70604,
+    "2": 30678,
+    "3": 11048
+  },
+  "eligibility_diagnostics": {
+    "total_steps": 246292,
+    "valid_long_zone_steps": 74474,
+    "valid_short_zone_steps": 41266,
+    "valid_long_zone_pct": 0.3024,
+    "valid_short_zone_pct": 0.1675,
+    "long_entry_attempts_on_valid": 21892,
+    "short_entry_attempts_on_valid": 255,
+    "long_entry_attempts_on_invalid": 48712,
+    "short_entry_attempts_on_invalid": 30423
+  }
+}

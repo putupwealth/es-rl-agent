@@ -1,0 +1,10 @@
+entry_time,direction,entry_price,entry_action,PDH,PDL,first_break_above_PDH,first_break_below_PDL,break_above_PDH,break_below_PDL,near_PDH,near_PDL,bias_long,bias_short,trend_1h_up,trend_4h_up,is_rth,is_eth,setup_type,bias_alignment,valid_long_zone,valid_short_zone,allowed_long_entry,allowed_short_entry,entry_rule_trigger,blocked_reason,exit_time,exit_price,pnl,exit_action,exit_reason
+2025-03-25 10:29:00-04:00,LONG,5830.75,1,5825.5,5776.0,0,0,1,0,0,0,1,0,1,1,1,0,breakout_above_PDH,aligned,1,0,1,0,long_breakout_context,,2025-03-25 11:54:00-04:00,5820.75,-505.0,1,stop_loss
+2025-04-25 12:23:00-04:00,LONG,5526.5,1,5520.0,5398.5,0,0,1,0,0,0,1,0,1,1,1,0,breakout_above_PDH,aligned,1,0,1,0,long_breakout_context,,2025-04-25 12:40:00-04:00,5532.5,295.0,3,agent_exit
+2025-04-25 12:41:00-04:00,LONG,5532.25,1,5520.0,5398.5,0,0,1,0,0,0,1,0,1,1,1,0,breakout_above_PDH,aligned,1,0,1,0,long_breakout_context,,2025-04-25 13:05:00-04:00,5537.5,257.5,3,agent_exit
+2025-04-25 13:38:00-04:00,LONG,5536.5,1,5520.0,5398.5,0,0,1,0,0,0,1,0,1,1,1,0,breakout_above_PDH,aligned,1,0,1,0,long_breakout_context,,2025-04-25 14:03:00-04:00,5530.75,395.0,3,agent_exit
+2025-04-25 14:04:00-04:00,LONG,5529.25,1,5520.0,5398.5,0,0,1,0,0,0,1,0,1,1,1,0,breakout_above_PDH,aligned,1,0,1,0,long_breakout_context,,2025-04-25 14:09:00-04:00,5535.25,295.0,3,agent_exit
+2025-04-25 14:52:00-04:00,LONG,5538.25,1,5520.0,5398.5,0,0,1,0,0,0,1,0,1,1,1,0,breakout_above_PDH,aligned,1,0,1,0,long_breakout_context,,2025-04-25 14:53:00-04:00,5545.0,332.5,3,agent_exit
+2025-04-25 15:13:00-04:00,LONG,5541.25,1,5520.0,5398.5,0,0,1,0,0,0,1,0,1,1,1,0,breakout_above_PDH,aligned,1,0,1,0,long_breakout_context,,2025-04-25 15:21:00-04:00,5549.25,395.0,3,agent_exit
+2025-04-25 15:28:00-04:00,LONG,5541.25,1,5520.0,5398.5,0,0,1,0,0,0,1,0,1,1,1,0,breakout_above_PDH,aligned,1,0,1,0,long_breakout_context,,2025-04-25 15:53:00-04:00,5549.75,420.0,3,agent_exit
+2025-04-25 15:59:00-04:00,LONG,5548.25,1,5520.0,5398.5,0,0,1,0,0,0,1,0,1,1,1,0,breakout_above_PDH,aligned,1,0,1,0,long_breakout_context,,2025-04-25 16:01:00-04:00,5552.75,220.0,1,outside_rth_exit

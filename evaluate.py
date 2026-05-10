@@ -156,9 +156,14 @@ def resolve_run_id(model_file: Path, reports_dir: Path, explicit_run_id: Optiona
 
 
 def copy_latest_reports(report_dir: Path, latest_dir: Path):
-    if latest_dir.exists():
-        shutil.rmtree(latest_dir)
-    shutil.copytree(report_dir, latest_dir)
+    try:
+        if latest_dir.exists():
+            shutil.rmtree(latest_dir)
+        shutil.copytree(report_dir, latest_dir)
+        print(f"Copied latest reports to: {latest_dir}")
+    except PermissionError as exc:
+        print(f"WARNING: Could not refresh latest reports directory: {exc}")
+        print(f"Run artifacts remain available in: {report_dir}")
 
 
 def build_steps_dataframe(step_logs: list) -> pd.DataFrame:

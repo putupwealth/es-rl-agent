@@ -17,14 +17,20 @@ Supported input modes
 5. Mixed explicit inputs plus reports-dir scan:
        python scripts/compare_runs.py reports/run_a reports/latest_run.txt --reports-dir reports --latest 10
 
-Optional output:
-       python scripts/compare_runs.py --reports-dir reports --csv-out reports/run_comparison.csv
-       python scripts/compare_runs.py --reports-dir reports --markdown
+Commands:
+    python scripts/compare_runs.py
+    python scripts/compare_runs.py --reports-dir reports
+    python scripts/compare_runs.py --reports-dir reports --latest 5
+    python scripts/compare_runs.py --reports-dir reports --rank-by
+    python scripts/compare_runs.py --reports-dir reports --csv-dir reports/comparisons
+    python scripts/compare_runs.py reports/latest_run.txt
+    python scripts/compare_runs.py reports/run_a reports/run_b
 """
 
 import argparse
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -32,6 +38,7 @@ import pandas as pd
 
 
 DEFAULT_REPORTS_DIR = "reports"
+DEFAULT_COMPARISON_CSV_DIR = "reports/comparisons"
 
 
 class Ansi:
@@ -68,7 +75,6 @@ def format_num(value, decimals: int = 2) -> str:
 
 
 def resolve_report_dir(path_str: str) -> Path:
-    """Resolve either a report directory path or a .txt pointer file."""
     path = Path(path_str)
 
     if path.is_file() and path.suffix.lower() == ".txt":
@@ -91,11 +97,10 @@ def safe_load_json(path: Path) -> Optional[dict]:
 
 
 def is_run_directory(path: Path) -> bool:
-    """Heuristic for whether a directory looks like an evaluation run folder."""
     if not path.is_dir():
         return False
 
-    if path.name.lower() in {"latest"}:
+    if path.name.lower() in {"latest", "comparisons"}:
         return False
 
     return (
@@ -173,11 +178,7 @@ def extract_run_row(report_dir: Path) -> Dict:
     verdict = verification.get("verdict")
     diagnosis = verification.get("diagnosis")
 
-    verdict_score = {
-        "PASS": 2,
-        "WARN": 1,
-        "FAIL": 0,
-    }.get(verdict, -1)
+    verdict_score = {"PASS": 2, "WARN": 1, "FAIL": 0}.get(verdict, -1)
 
     total_pnl = trades.get("total_pnl", packet_trade_summary.get("total_pnl"))
     total_trades = trades.get("total_trades", packet_trade_summary.get("total_trades"))
@@ -200,28 +201,23 @@ def extract_run_row(report_dir: Path) -> Dict:
         "model_path": experiment.get("model_path"),
         "evaluation_seed": experiment.get("evaluation_seed"),
         "test_rows": experiment.get("test_rows"),
-
         "verdict": verdict,
         "diagnosis": diagnosis,
         "reason": verification.get("reason"),
-
         "final_realized_equity": performance.get("final_realized_equity"),
         "final_total_equity": performance.get("final_total_equity"),
         "cumulative_reward": performance.get("cumulative_reward"),
-
         "total_trades": total_trades,
         "long_trades": trades.get("long_trades", packet_trade_summary.get("long_trades")),
         "short_trades": trades.get("short_trades", packet_trade_summary.get("short_trades")),
         "win_rate": win_rate,
         "total_pnl": total_pnl,
         "avg_pnl": trades.get("avg_pnl", packet_trade_summary.get("avg_pnl")),
-
         "total_steps": eligibility.get("total_steps", metrics.get("total_steps")),
         "valid_long_zone_steps": eligibility.get("valid_long_zone_steps", metrics.get("valid_long_zone_steps")),
         "valid_short_zone_steps": eligibility.get("valid_short_zone_steps", metrics.get("valid_short_zone_steps")),
         "valid_long_zone_pct": eligibility.get("valid_long_zone_pct", metrics.get("valid_long_zone_pct")),
         "valid_short_zone_pct": eligibility.get("valid_short_zone_pct", metrics.get("valid_short_zone_pct")),
-
         "long_entry_attempts_on_valid": long_valid,
         "short_entry_attempts_on_valid": short_valid,
         "long_entry_attempts_on_invalid": long_invalid,
@@ -230,10 +226,8 @@ def extract_run_row(report_dir: Path) -> Dict:
         "total_invalid_attempts": total_invalid_attempts,
         "invalid_attempt_ratio": invalid_attempt_ratio,
         "blocked_step_count": metrics.get("blocked_step_count"),
-
         "verdict_score": verdict_score,
         "composite_score": composite_score,
-
         "verification_generated_at": verification.get("generated_at"),
         "packet_generated_at": packet.get("generated_at"),
         "folder_modified_time": report_dir.stat().st_mtime,
@@ -246,35 +240,15 @@ def build_dataframe(run_dirs: List[Path]) -> pd.DataFrame:
         return pd.DataFrame()
 
     df = pd.DataFrame(rows)
-
     preferred_columns = [
-        "run_id",
-        "verdict",
-        "diagnosis",
-        "composite_score",
-        "final_realized_equity",
-        "total_pnl",
-        "avg_pnl",
-        "win_rate",
-        "total_trades",
-        "long_trades",
-        "short_trades",
-        "total_valid_attempts",
-        "total_invalid_attempts",
-        "invalid_attempt_ratio",
-        "long_entry_attempts_on_valid",
-        "short_entry_attempts_on_valid",
-        "long_entry_attempts_on_invalid",
-        "short_entry_attempts_on_invalid",
-        "valid_long_zone_pct",
-        "valid_short_zone_pct",
-        "blocked_step_count",
-        "cumulative_reward",
-        "evaluation_seed",
-        "model_name",
-        "report_dir",
+        "run_id", "verdict", "diagnosis", "composite_score", "final_realized_equity",
+        "total_pnl", "avg_pnl", "win_rate", "total_trades", "long_trades", "short_trades",
+        "total_valid_attempts", "total_invalid_attempts", "invalid_attempt_ratio",
+        "long_entry_attempts_on_valid", "short_entry_attempts_on_valid",
+        "long_entry_attempts_on_invalid", "short_entry_attempts_on_invalid",
+        "valid_long_zone_pct", "valid_short_zone_pct", "blocked_step_count",
+        "cumulative_reward", "evaluation_seed", "model_name", "report_dir",
     ]
-
     existing = [c for c in preferred_columns if c in df.columns]
     remaining = [c for c in df.columns if c not in existing]
     return df[existing + remaining]
@@ -326,18 +300,14 @@ def colorize_verdict(verdict: str, enabled: bool) -> str:
 
 def make_pretty_display_df(df: pd.DataFrame, color: bool) -> pd.DataFrame:
     out = df.copy()
-
     if "verdict" in out.columns:
         out["verdict"] = out["verdict"].apply(lambda v: colorize_verdict(v, color))
-
     for col in ["win_rate", "valid_long_zone_pct", "valid_short_zone_pct", "invalid_attempt_ratio"]:
         if col in out.columns:
             out[col] = out[col].apply(format_pct)
-
     for col in ["composite_score", "final_realized_equity", "total_pnl", "avg_pnl", "cumulative_reward"]:
         if col in out.columns:
             out[col] = out[col].apply(format_num)
-
     return out
 
 
@@ -347,20 +317,11 @@ def print_summary_table(df: pd.DataFrame, color: bool):
         return
 
     display_cols = [
-        "run_id",
-        "verdict",
-        "diagnosis",
-        "composite_score",
-        "total_pnl",
-        "total_trades",
-        "win_rate",
-        "total_valid_attempts",
-        "total_invalid_attempts",
-        "invalid_attempt_ratio",
-        "final_realized_equity",
+        "run_id", "verdict", "diagnosis", "composite_score", "total_pnl",
+        "total_trades", "win_rate", "total_valid_attempts", "total_invalid_attempts",
+        "invalid_attempt_ratio", "final_realized_equity",
     ]
     display_cols = [c for c in display_cols if c in df.columns]
-
     display_df = make_pretty_display_df(df[display_cols].copy(), color=color)
 
     with pd.option_context(
@@ -379,24 +340,15 @@ def print_markdown_table(df: pd.DataFrame):
         return
 
     display_cols = [
-        "run_id",
-        "verdict",
-        "diagnosis",
-        "composite_score",
-        "total_pnl",
-        "total_trades",
-        "win_rate",
-        "total_invalid_attempts",
-        "invalid_attempt_ratio",
+        "run_id", "verdict", "diagnosis", "composite_score", "total_pnl",
+        "total_trades", "win_rate", "total_invalid_attempts", "invalid_attempt_ratio",
     ]
     display_cols = [c for c in display_cols if c in df.columns]
-
     table_df = df[display_cols].copy()
 
     for col in ["win_rate", "invalid_attempt_ratio"]:
         if col in table_df.columns:
             table_df[col] = table_df[col].apply(format_pct)
-
     for col in ["composite_score", "total_pnl"]:
         if col in table_df.columns:
             table_df[col] = table_df[col].apply(format_num)
@@ -426,7 +378,6 @@ def print_top_n(df: pd.DataFrame, metric: str, n: int, ascending: bool = False):
         return
 
     temp = temp.sort_values(by=metric, ascending=ascending).head(n)
-
     print(f"\n=== TOP {n} by {metric} ({'lowest' if ascending else 'highest'}) ===")
     cols = [c for c in ["run_id", "verdict", "diagnosis", metric] if c in temp.columns]
     pretty = temp[cols].copy()
@@ -470,42 +421,26 @@ def print_best_run_hints(df: pd.DataFrame, color: bool):
     warn_df = df[df["verdict"] == "WARN"] if "verdict" in df.columns else pd.DataFrame()
     fail_df = df[df["verdict"] == "FAIL"] if "verdict" in df.columns else pd.DataFrame()
 
-    pass_text = color_text(f"PASS runs: {len(pass_df)}/{len(df)}", Ansi.GREEN, color)
-    warn_text = color_text(f"WARN runs: {len(warn_df)}/{len(df)}", Ansi.YELLOW, color)
-    fail_text = color_text(f"FAIL runs: {len(fail_df)}/{len(df)}", Ansi.RED, color)
-
-    print(pass_text)
-    print(warn_text)
-    print(fail_text)
+    print(color_text(f"PASS runs: {len(pass_df)}/{len(df)}", Ansi.GREEN, color))
+    print(color_text(f"WARN runs: {len(warn_df)}/{len(df)}", Ansi.YELLOW, color))
+    print(color_text(f"FAIL runs: {len(fail_df)}/{len(df)}", Ansi.RED, color))
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Compare multiple evaluation run folders side by side.")
     parser.add_argument("paths", nargs="*", help="Optional explicit report directories or .txt pointer files.")
-    parser.add_argument(
-        "--reports-dir",
-        default=None,
-        help=f"Scan run directories under this reports folder. Default if nothing else provided: {DEFAULT_REPORTS_DIR}",
-    )
+    parser.add_argument("--reports-dir", default=None, help=f"Scan run directories under this reports folder. Default: {DEFAULT_REPORTS_DIR}")
     parser.add_argument("--latest", type=int, default=None, help="Only include the latest N run directories.")
-    parser.add_argument(
-        "--sort-by",
-        default="folder_modified_time",
-        help="Column to sort by. Examples: total_pnl, composite_score, total_trades, folder_modified_time",
-    )
+    parser.add_argument("--sort-by", default="folder_modified_time", help="Column to sort by.")
     parser.add_argument("--ascending", action="store_true", help="Sort ascending instead of descending.")
-    parser.add_argument("--csv-out", default=None, help="Optional path to write the full comparison table as CSV.")
+    parser.add_argument("--csv-out", default=None, help="Optional explicit CSV output path.")
+    parser.add_argument("--csv-dir", default=None, help="Optional directory to write a timestamped CSV comparison file.")
     parser.add_argument("--full", action="store_true", help="Print the full dataframe.")
     parser.add_argument("--markdown", action="store_true", help="Print a markdown table.")
     parser.add_argument("--filter-verdict", nargs="*", default=None, help="Filter to one or more verdicts.")
     parser.add_argument("--filter-diagnosis", nargs="*", default=None, help="Filter to one or more diagnoses.")
     parser.add_argument("--min-trades", type=int, default=None, help="Only include runs with at least this many trades.")
-    parser.add_argument(
-        "--max-invalid-attempts",
-        type=int,
-        default=None,
-        help="Only include runs with at most this many invalid attempts.",
-    )
+    parser.add_argument("--max-invalid-attempts", type=int, default=None, help="Only include runs with at most this many invalid attempts.")
     parser.add_argument("--only-pass", action="store_true", help="Only include PASS runs.")
     parser.add_argument("--rank-by", action="store_true", help="Shortcut to sort by composite_score descending.")
     parser.add_argument("--color", action="store_true", help="Enable ANSI colorized output.")
@@ -515,6 +450,10 @@ def parse_args():
 
 def main():
     args = parse_args()
+
+    if args.csv_out and args.csv_dir:
+        print("ERROR: Use only one of --csv-out or --csv-dir.", file=sys.stderr)
+        sys.exit(1)
 
     if not args.paths and not args.reports_dir:
         args.reports_dir = DEFAULT_REPORTS_DIR
@@ -562,9 +501,16 @@ def main():
 
     if args.csv_out:
         csv_path = Path(args.csv_out)
-        csv_path.parent.mkdir(parents=True, exist_ok=True)
-        df.to_csv(csv_path, index=False)
-        print(f"Wrote CSV comparison: {csv_path}")
+    elif args.csv_dir:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        csv_path = Path(args.csv_dir) / f"run_comparison_{timestamp}.csv"
+    else:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        csv_path = Path(DEFAULT_COMPARISON_CSV_DIR) / f"run_comparison_{timestamp}.csv"
+
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(csv_path, index=False)
+    print(f"Wrote CSV comparison: {csv_path}")
 
     if args.full:
         pretty_df = make_pretty_display_df(df.copy(), color=args.color)

@@ -556,6 +556,168 @@ reports/
 .DS_Store
 ```
 
+## Unified Pipeline
+
+Use the single pipeline runner:
+
+```powershell
+python scripts/run_pipeline.py
+```
+
+### What each command runs
+
+#### 1. Default pipeline
+```powershell
+python scripts/run_pipeline.py
+```
+
+Runs:
+
+- `evaluate.py`
+- `scripts/run_post_eval.py`
+
+Does **not** run:
+
+- `train.py`
+- `scripts/compare_runs.py`
+
+---
+
+#### 2. Train + evaluate + post-eval
+```powershell
+python scripts/run_pipeline.py --train
+```
+
+Runs:
+
+- `train.py`
+- `evaluate.py`
+- `scripts/run_post_eval.py`
+
+Does **not** run:
+
+- `scripts/compare_runs.py`
+
+---
+
+#### 3. Compare added
+```powershell
+python scripts/run_pipeline.py --compare
+```
+
+Runs:
+
+- `evaluate.py`
+- `scripts/run_post_eval.py`
+- `scripts/compare_runs.py`
+
+Also writes a comparison CSV by default to:
+
+```text
+reports/comparisons/run_comparison_YYYYMMDD_HHMMSS.csv
+```
+
+---
+
+#### 4. Train + evaluate + post-eval + compare
+```powershell
+python scripts/run_pipeline.py --train --compare
+```
+
+Runs:
+
+- `train.py`
+- `evaluate.py`
+- `scripts/run_post_eval.py`
+- `scripts/compare_runs.py`
+
+Also writes a comparison CSV by default to:
+
+```text
+reports/comparisons/run_comparison_YYYYMMDD_HHMMSS.csv
+```
+
+---
+
+#### 5. Run all stages
+```powershell
+python scripts/run_pipeline.py --all
+```
+
+Runs:
+
+- `train.py`
+- `evaluate.py`
+- `scripts/run_post_eval.py`
+- `scripts/compare_runs.py`
+
+Also writes a comparison CSV by default to:
+
+```text
+reports/comparisons/run_comparison_YYYYMMDD_HHMMSS.csv
+```
+
+---
+
+#### 6. Evaluate only
+```powershell
+python scripts/run_pipeline.py --evaluate-only
+```
+
+Runs:
+
+- `evaluate.py`
+
+---
+
+#### 7. Post-eval only
+```powershell
+python scripts/run_pipeline.py --post-eval-only
+```
+
+Runs:
+
+- `scripts/run_post_eval.py`
+
+---
+
+#### 8. Compare only
+```powershell
+python scripts/run_pipeline.py --compare-only
+```
+
+Runs:
+
+- `scripts/compare_runs.py`
+
+Also writes a comparison CSV by default to:
+
+```text
+reports/comparisons/run_comparison_YYYYMMDD_HHMMSS.csv
+```
+
+### Common examples
+
+```powershell
+python scripts/run_pipeline.py
+python scripts/run_pipeline.py --train
+python scripts/run_pipeline.py --compare
+python scripts/run_pipeline.py --train --compare
+python scripts/run_pipeline.py --all
+python scripts/run_pipeline.py --evaluate-only
+python scripts/run_pipeline.py --post-eval-only
+python scripts/run_pipeline.py --compare-only
+python scripts/run_pipeline.py --compare-only --latest 10
+python scripts/run_pipeline.py --all --latest 10 --csv-dir reports/comparisons
+```
+
+### Notes
+
+- `--train` by itself does **not** run compare.
+- `--compare` adds the comparison stage after evaluation and post-eval.
+- `--all` runs every stage.
+- comparison CSV output defaults to `reports/comparisons/`.
+
 ## Project Philosophy
 
 This project is not trying to build a magic trading bot.

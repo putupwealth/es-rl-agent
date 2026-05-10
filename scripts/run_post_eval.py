@@ -1,3 +1,11 @@
+"""
+Run post-evaluation processing for the latest evaluation report.
+
+Commands:
+    python scripts/run_post_eval.py
+    python scripts/run_post_eval.py --latest-run-pointer reports/latest_run.txt
+"""
+
 import subprocess
 import sys
 from pathlib import Path

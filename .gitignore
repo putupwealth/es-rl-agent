@@ -6,3 +6,4 @@ data/
 models/
 reports/
 .env
+.DS_Store

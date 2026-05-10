@@ -7,6 +7,11 @@ later LLM review.
 Usage::
 
     python scripts/build_llm_input_packet.py <report_dir>
+
+Examples::
+
+    python scripts/build_llm_input_packet.py reports/run_123
+    python scripts/build_llm_input_packet.py reports/latest_run.txt
 """
 
 import argparse
@@ -35,6 +40,25 @@ STEP_SAMPLE_COLUMNS = [
     "reward",
 ]
 MALFORMED_METRICS_ERROR_MSG = "verification.json contains malformed metrics"
+
+
+def resolve_report_dir(report_dir_arg: str) -> Path:
+    """Resolve a report directory argument.
+
+    Accepts either:
+    - a direct report directory path, or
+    - a .txt pointer file whose contents are the real report directory path
+      (for example reports/latest_run.txt).
+    """
+    path = Path(report_dir_arg)
+
+    if path.is_file() and path.suffix.lower() == ".txt":
+        resolved = path.read_text(encoding="utf-8").strip()
+        if not resolved:
+            raise ValueError(f"Latest run pointer is empty: {path}")
+        return Path(resolved)
+
+    return path
 
 
 def _to_json_value(value):
@@ -296,13 +320,18 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description="Build an LLM input packet for a single report directory."
     )
-    parser.add_argument("report_dir", help="Path to the evaluation report directory.")
+    parser.add_argument("report_dir", help="Path to the evaluation report directory or latest_run.txt pointer.")
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
-    report_dir = Path(args.report_dir)
+
+    try:
+        report_dir = resolve_report_dir(args.report_dir)
+    except Exception as exc:
+        print(f"ERROR: Could not resolve report directory: {exc}", file=sys.stderr)
+        sys.exit(1)
 
     if not report_dir.exists():
         print(f"ERROR: Report directory does not exist: {report_dir}", file=sys.stderr)

@@ -124,7 +124,7 @@ def load_inputs(report_dir: Path):
         errors.append("Missing required file: steps.csv")
     else:
         try:
-            steps_df = pd.read_csv(steps_path)
+            steps_df = pd.read_csv(steps_path, low_memory=False)
         except Exception as exc:
             errors.append(f"steps.csv is not parseable: {exc}")
 
@@ -132,7 +132,7 @@ def load_inputs(report_dir: Path):
         errors.append("Missing required file: trades.csv")
     else:
         try:
-            trades_df = pd.read_csv(trades_path)
+            trades_df = pd.read_csv(trades_path, low_memory=False)
         except Exception as exc:
             errors.append(f"trades.csv is not parseable: {exc}")
 

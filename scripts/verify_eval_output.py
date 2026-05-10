@@ -24,6 +24,14 @@ import pandas as pd
 
 VERIFIER_VERSION = "1.0.0"
 
+# Fraction of entry attempts that must be on invalid bars before the run is
+# classified as invalid_action_heavy (exclusive lower bound).
+INVALID_ACTION_RATIO_THRESHOLD = 0.5
+
+# Maximum number of completed trades that still qualifies a run as
+# "very few trades" for the invalid_action_heavy check (inclusive upper bound).
+INVALID_ACTION_MAX_TRADES = 1
+
 # Required columns for steps.csv (mirrors STEPS_REQUIRED_COLUMNS in evaluate.py).
 STEPS_REQUIRED_COLUMNS = [
     "action",
@@ -251,7 +259,7 @@ def classify(checks: dict, metrics: dict) -> tuple:
     else:
         invalid_ratio = 0.0
 
-    if invalid_ratio > 0.5 and total_trades <= 1:
+    if invalid_ratio > INVALID_ACTION_RATIO_THRESHOLD and total_trades <= INVALID_ACTION_MAX_TRADES:
         return (
             "invalid_action_heavy",
             "WARN",

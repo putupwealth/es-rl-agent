@@ -74,6 +74,12 @@ def format_num(value, decimals: int = 2) -> str:
         return str(value)
 
 
+def format_label(value) -> str:
+    if value is None or pd.isna(value):
+        return "unknown"
+    return str(value)
+
+
 def resolve_report_dir(path_str: str) -> Path:
     path = Path(path_str)
 
@@ -100,13 +106,19 @@ def is_run_directory(path: Path) -> bool:
     if not path.is_dir():
         return False
 
-    if path.name.lower() in {"latest", "comparisons"}:
+    name_lower = path.name.lower()
+
+    if name_lower in {"latest", "comparisons"}:
+        return False
+
+    if "_eval_" in name_lower:
         return False
 
     return (
         (path / "eval_summary.json").exists()
         or (path / "verification.json").exists()
         or (path / "llm_input_packet.json").exists()
+        or (path / "experiment_config.json").exists()
         or (path / "steps.csv").exists()
         or (path / "trades.csv").exists()
     )
@@ -156,6 +168,7 @@ def extract_run_row(report_dir: Path) -> Dict:
     summary = safe_load_json(report_dir / "eval_summary.json") or {}
     verification = safe_load_json(report_dir / "verification.json") or {}
     packet = safe_load_json(report_dir / "llm_input_packet.json") or {}
+    experiment_config = safe_load_json(report_dir / "experiment_config.json") or {}
 
     experiment = summary.get("experiment", {})
     performance = summary.get("performance", {})
@@ -164,6 +177,11 @@ def extract_run_row(report_dir: Path) -> Dict:
 
     metrics = verification.get("metrics", {})
     packet_trade_summary = packet.get("trade_summary", {})
+
+    config_training = experiment_config.get("training", {})
+    config_versions = experiment_config.get("versions", {})
+    config_rules = experiment_config.get("rules", {})
+    config_reward = experiment_config.get("reward", {})
 
     long_invalid = eligibility.get("long_entry_attempts_on_invalid", metrics.get("long_entry_attempts_on_invalid", 0)) or 0
     short_invalid = eligibility.get("short_entry_attempts_on_invalid", metrics.get("short_entry_attempts_on_invalid", 0)) or 0
@@ -197,10 +215,29 @@ def extract_run_row(report_dir: Path) -> Dict:
     return {
         "report_dir": str(report_dir),
         "run_id": experiment.get("run_id", report_dir.name),
+        "experiment_name": experiment_config.get("experiment_name"),
         "model_name": experiment.get("model_name"),
         "model_path": experiment.get("model_path"),
         "evaluation_seed": experiment.get("evaluation_seed"),
+        "seed": config_training.get("seed", experiment.get("evaluation_seed")),
         "test_rows": experiment.get("test_rows"),
+        "reward_version": config_versions.get("reward_version"),
+        "feature_version": config_versions.get("feature_version"),
+        "environment_version": config_versions.get("environment_version"),
+        "policy_version": config_training.get("policy_version"),
+        "invalid_action_penalty": config_reward.get("invalid_action_penalty"),
+        "hold_penalty": config_reward.get("hold_penalty"),
+        "overtrade_penalty": config_reward.get("overtrade_penalty"),
+        "drawdown_penalty": config_reward.get("drawdown_penalty"),
+        "commission": config_reward.get("commission"),
+        "stop_loss": config_reward.get("stop_loss"),
+        "take_profit": config_reward.get("take_profit"),
+        "uses_rth_filter": config_rules.get("uses_rth_filter"),
+        "uses_zone_gating": config_rules.get("uses_zone_gating"),
+        "uses_time_features": config_rules.get("uses_time_features"),
+        "entry_window": config_rules.get("entry_window"),
+        "max_trades_per_day": config_rules.get("max_trades_per_day"),
+        "max_hold_bars": config_rules.get("max_hold_bars"),
         "verdict": verdict,
         "diagnosis": diagnosis,
         "reason": verification.get("reason"),
@@ -230,6 +267,7 @@ def extract_run_row(report_dir: Path) -> Dict:
         "composite_score": composite_score,
         "verification_generated_at": verification.get("generated_at"),
         "packet_generated_at": packet.get("generated_at"),
+        "experiment_config_written_at": experiment_config.get("written_at_utc"),
         "folder_modified_time": report_dir.stat().st_mtime,
     }
 
@@ -241,13 +279,39 @@ def build_dataframe(run_dirs: List[Path]) -> pd.DataFrame:
 
     df = pd.DataFrame(rows)
     preferred_columns = [
-        "run_id", "verdict", "diagnosis", "composite_score", "final_realized_equity",
-        "total_pnl", "avg_pnl", "win_rate", "total_trades", "long_trades", "short_trades",
-        "total_valid_attempts", "total_invalid_attempts", "invalid_attempt_ratio",
-        "long_entry_attempts_on_valid", "short_entry_attempts_on_valid",
-        "long_entry_attempts_on_invalid", "short_entry_attempts_on_invalid",
-        "valid_long_zone_pct", "valid_short_zone_pct", "blocked_step_count",
-        "cumulative_reward", "evaluation_seed", "model_name", "report_dir",
+        "run_id",
+        "verdict",
+        "diagnosis",
+        "reward_version",
+        "feature_version",
+        "environment_version",
+        "seed",
+        "invalid_action_penalty",
+        "uses_rth_filter",
+        "uses_zone_gating",
+        "uses_time_features",
+        "composite_score",
+        "final_realized_equity",
+        "total_pnl",
+        "avg_pnl",
+        "win_rate",
+        "total_trades",
+        "long_trades",
+        "short_trades",
+        "total_valid_attempts",
+        "total_invalid_attempts",
+        "invalid_attempt_ratio",
+        "long_entry_attempts_on_valid",
+        "short_entry_attempts_on_valid",
+        "long_entry_attempts_on_invalid",
+        "short_entry_attempts_on_invalid",
+        "valid_long_zone_pct",
+        "valid_short_zone_pct",
+        "blocked_step_count",
+        "cumulative_reward",
+        "evaluation_seed",
+        "model_name",
+        "report_dir",
     ]
     existing = [c for c in preferred_columns if c in df.columns]
     remaining = [c for c in df.columns if c not in existing]
@@ -305,7 +369,20 @@ def make_pretty_display_df(df: pd.DataFrame, color: bool) -> pd.DataFrame:
     for col in ["win_rate", "valid_long_zone_pct", "valid_short_zone_pct", "invalid_attempt_ratio"]:
         if col in out.columns:
             out[col] = out[col].apply(format_pct)
-    for col in ["composite_score", "final_realized_equity", "total_pnl", "avg_pnl", "cumulative_reward"]:
+    for col in [
+        "composite_score",
+        "final_realized_equity",
+        "total_pnl",
+        "avg_pnl",
+        "cumulative_reward",
+        "invalid_action_penalty",
+        "hold_penalty",
+        "overtrade_penalty",
+        "drawdown_penalty",
+        "commission",
+        "stop_loss",
+        "take_profit",
+    ]:
         if col in out.columns:
             out[col] = out[col].apply(format_num)
     return out
@@ -317,9 +394,23 @@ def print_summary_table(df: pd.DataFrame, color: bool):
         return
 
     display_cols = [
-        "run_id", "verdict", "diagnosis", "composite_score", "total_pnl",
-        "total_trades", "win_rate", "total_valid_attempts", "total_invalid_attempts",
-        "invalid_attempt_ratio", "final_realized_equity",
+        "run_id",
+        "verdict",
+        "diagnosis",
+        "reward_version",
+        "feature_version",
+        "seed",
+        "invalid_action_penalty",
+        "uses_rth_filter",
+        "uses_zone_gating",
+        "composite_score",
+        "total_pnl",
+        "total_trades",
+        "win_rate",
+        "total_valid_attempts",
+        "total_invalid_attempts",
+        "invalid_attempt_ratio",
+        "final_realized_equity",
     ]
     display_cols = [c for c in display_cols if c in df.columns]
     display_df = make_pretty_display_df(df[display_cols].copy(), color=color)
@@ -327,7 +418,7 @@ def print_summary_table(df: pd.DataFrame, color: bool):
     with pd.option_context(
         "display.max_rows", None,
         "display.max_columns", None,
-        "display.width", 240,
+        "display.width", 260,
         "display.max_colwidth", 60,
     ):
         print("\n=== RUN COMPARISON ===")
@@ -340,8 +431,21 @@ def print_markdown_table(df: pd.DataFrame):
         return
 
     display_cols = [
-        "run_id", "verdict", "diagnosis", "composite_score", "total_pnl",
-        "total_trades", "win_rate", "total_invalid_attempts", "invalid_attempt_ratio",
+        "run_id",
+        "verdict",
+        "diagnosis",
+        "reward_version",
+        "feature_version",
+        "seed",
+        "invalid_action_penalty",
+        "uses_rth_filter",
+        "uses_zone_gating",
+        "composite_score",
+        "total_pnl",
+        "total_trades",
+        "win_rate",
+        "total_invalid_attempts",
+        "invalid_attempt_ratio",
     ]
     display_cols = [c for c in display_cols if c in df.columns]
     table_df = df[display_cols].copy()
@@ -349,7 +453,7 @@ def print_markdown_table(df: pd.DataFrame):
     for col in ["win_rate", "invalid_attempt_ratio"]:
         if col in table_df.columns:
             table_df[col] = table_df[col].apply(format_pct)
-    for col in ["composite_score", "total_pnl"]:
+    for col in ["composite_score", "total_pnl", "invalid_action_penalty"]:
         if col in table_df.columns:
             table_df[col] = table_df[col].apply(format_num)
 
@@ -379,7 +483,7 @@ def print_top_n(df: pd.DataFrame, metric: str, n: int, ascending: bool = False):
 
     temp = temp.sort_values(by=metric, ascending=ascending).head(n)
     print(f"\n=== TOP {n} by {metric} ({'lowest' if ascending else 'highest'}) ===")
-    cols = [c for c in ["run_id", "verdict", "diagnosis", metric] if c in temp.columns]
+    cols = [c for c in ["run_id", "verdict", "diagnosis", "reward_version", "feature_version", metric] if c in temp.columns]
     pretty = temp[cols].copy()
 
     if metric in {"win_rate", "invalid_attempt_ratio", "valid_long_zone_pct", "valid_short_zone_pct"}:
@@ -387,7 +491,7 @@ def print_top_n(df: pd.DataFrame, metric: str, n: int, ascending: bool = False):
     else:
         pretty[metric] = pretty[metric].apply(format_num)
 
-    with pd.option_context("display.max_rows", None, "display.width", 200):
+    with pd.option_context("display.max_rows", None, "display.width", 220):
         print(pretty.to_string(index=False))
 
 
@@ -400,22 +504,42 @@ def print_best_run_hints(df: pd.DataFrame, color: bool):
     pnl_df = df.dropna(subset=["total_pnl"]) if "total_pnl" in df.columns else pd.DataFrame()
     if not pnl_df.empty:
         best_pnl_row = pnl_df.loc[pnl_df["total_pnl"].astype(float).idxmax()]
-        print(f"Best total_pnl: {best_pnl_row['run_id']} ({format_num(best_pnl_row['total_pnl'])})")
+        print(
+            f"Best total_pnl: {best_pnl_row['run_id']} "
+            f"({format_num(best_pnl_row['total_pnl'])}) "
+            f"[reward={format_label(best_pnl_row.get('reward_version'))}, "
+            f"feature={format_label(best_pnl_row.get('feature_version'))}]"
+        )
 
     score_df = df.dropna(subset=["composite_score"]) if "composite_score" in df.columns else pd.DataFrame()
     if not score_df.empty:
         best_score_row = score_df.loc[score_df["composite_score"].astype(float).idxmax()]
-        print(f"Best composite score: {best_score_row['run_id']} ({format_num(best_score_row['composite_score'])})")
+        print(
+            f"Best composite score: {best_score_row['run_id']} "
+            f"({format_num(best_score_row['composite_score'])}) "
+            f"[reward={format_label(best_score_row.get('reward_version'))}, "
+            f"feature={format_label(best_score_row.get('feature_version'))}]"
+        )
 
     trades_df = df.dropna(subset=["total_trades"]) if "total_trades" in df.columns else pd.DataFrame()
     if not trades_df.empty:
         most_trades_row = trades_df.loc[trades_df["total_trades"].astype(float).idxmax()]
-        print(f"Most trades: {most_trades_row['run_id']} ({most_trades_row['total_trades']})")
+        print(
+            f"Most trades: {most_trades_row['run_id']} "
+            f"({most_trades_row['total_trades']}) "
+            f"[reward={format_label(most_trades_row.get('reward_version'))}, "
+            f"feature={format_label(most_trades_row.get('feature_version'))}]"
+        )
 
     invalid_df = df.dropna(subset=["total_invalid_attempts"]) if "total_invalid_attempts" in df.columns else pd.DataFrame()
     if not invalid_df.empty:
         least_invalid_row = invalid_df.loc[invalid_df["total_invalid_attempts"].astype(float).idxmin()]
-        print(f"Least invalid attempts: {least_invalid_row['run_id']} ({least_invalid_row['total_invalid_attempts']})")
+        print(
+            f"Least invalid attempts: {least_invalid_row['run_id']} "
+            f"({least_invalid_row['total_invalid_attempts']}) "
+            f"[reward={format_label(least_invalid_row.get('reward_version'))}, "
+            f"feature={format_label(least_invalid_row.get('feature_version'))}]"
+        )
 
     pass_df = df[df["verdict"] == "PASS"] if "verdict" in df.columns else pd.DataFrame()
     warn_df = df[df["verdict"] == "WARN"] if "verdict" in df.columns else pd.DataFrame()
@@ -517,7 +641,7 @@ def main():
         with pd.option_context(
             "display.max_rows", None,
             "display.max_columns", None,
-            "display.width", 300,
+            "display.width", 320,
             "display.max_colwidth", 100,
         ):
             print(pretty_df.to_string(index=False))

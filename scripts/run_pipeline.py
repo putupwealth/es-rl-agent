@@ -10,6 +10,7 @@ Command behavior
    Runs:
        - evaluate.py
        - scripts/run_post_eval.py
+       - scripts/write_experiment_config.py
 
    Does NOT run:
        - train.py
@@ -22,6 +23,7 @@ Command behavior
        - train.py
        - evaluate.py
        - scripts/run_post_eval.py
+       - scripts/write_experiment_config.py
 
    Does NOT run:
        - scripts/compare_runs.py
@@ -32,6 +34,7 @@ Command behavior
    Runs:
        - evaluate.py
        - scripts/run_post_eval.py
+       - scripts/write_experiment_config.py
        - scripts/compare_runs.py
 
    Also writes comparison CSV by default to:
@@ -44,6 +47,7 @@ Command behavior
        - train.py
        - evaluate.py
        - scripts/run_post_eval.py
+       - scripts/write_experiment_config.py
        - scripts/compare_runs.py
 
    Also writes comparison CSV by default to:
@@ -56,6 +60,7 @@ Command behavior
        - train.py
        - evaluate.py
        - scripts/run_post_eval.py
+       - scripts/write_experiment_config.py
        - scripts/compare_runs.py
 
    Also writes comparison CSV by default to:
@@ -72,6 +77,7 @@ Command behavior
 
    Runs:
        - scripts/run_post_eval.py
+       - scripts/write_experiment_config.py
 
 8) Compare only:
        python scripts/run_pipeline.py --compare-only
@@ -124,60 +130,11 @@ def parse_args():
     # PIPELINE STAGE FLAGS
     # ------------------------------------------------------------------
 
-    # --train
-    # Adds train.py before the normal evaluate + post-eval flow.
-    #
-    # Example:
-    #     python scripts/run_pipeline.py --train
-    #
-    # Runs:
-    #     1. train.py
-    #     2. evaluate.py
-    #     3. scripts/run_post_eval.py
-    #
-    # Does NOT run compare unless --compare is also passed.
     parser.add_argument("--train", action="store_true", help="Run train.py before evaluation.")
-
-    # --compare
-    # Adds compare_runs.py after evaluation + post-eval.
-    #
-    # Example:
-    #     python scripts/run_pipeline.py --compare
-    #
-    # Runs:
-    #     1. evaluate.py
-    #     2. scripts/run_post_eval.py
-    #     3. scripts/compare_runs.py
-    #
-    # This also writes a comparison CSV by default to reports/comparisons/.
     parser.add_argument("--compare", action="store_true", help="Run compare_runs.py after post-eval.")
-
-    # --all
-    # Runs every major stage in the pipeline.
-    #
-    # Example:
-    #     python scripts/run_pipeline.py --all
-    #
-    # Runs:
-    #     1. train.py
-    #     2. evaluate.py
-    #     3. scripts/run_post_eval.py
-    #     4. scripts/compare_runs.py
-    #
-    # This is the easiest "run everything" option.
     parser.add_argument("--all", action="store_true", help="Run all stages: train, evaluate, post-eval, compare.")
-
-    # --evaluate-only
-    # Runs only evaluate.py and exits.
     parser.add_argument("--evaluate-only", action="store_true", help="Run only evaluate.py.")
-
-    # --post-eval-only
-    # Runs only scripts/run_post_eval.py and exits.
     parser.add_argument("--post-eval-only", action="store_true", help="Run only scripts/run_post_eval.py.")
-
-    # --compare-only
-    # Runs only scripts/compare_runs.py and exits.
-    # Also writes CSV by default.
     parser.add_argument("--compare-only", action="store_true", help="Run only scripts/compare_runs.py.")
 
     # ------------------------------------------------------------------
@@ -203,6 +160,29 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=None, help="Optional seed for train.py/evaluate.py.")
     parser.add_argument("--total-timesteps", type=int, default=None, help="Optional total timesteps for train.py.")
     parser.add_argument("--model-file", default=None, help="Optional explicit model file for evaluate.py.")
+
+    # ------------------------------------------------------------------
+    # EXPERIMENT CONFIG METADATA
+    # ------------------------------------------------------------------
+    parser.add_argument("--experiment-name", default=None, help="Optional experiment name for experiment_config.json.")
+    parser.add_argument("--reward-version", default=None, help="Reward system version label.")
+    parser.add_argument("--feature-version", default=None, help="Feature set version label.")
+    parser.add_argument("--environment-version", default=None, help="Environment version label.")
+    parser.add_argument("--policy-version", default=None, help="Policy version label.")
+    parser.add_argument("--notes", default=None, help="Optional notes for experiment_config.json.")
+    parser.add_argument("--entry-window", default=None, help="Entry window description.")
+    parser.add_argument("--max-trades-per-day", type=int, default=None, help="Max trades per day.")
+    parser.add_argument("--max-hold-bars", type=int, default=None, help="Max hold bars.")
+    parser.add_argument("--stop-loss", type=float, default=None, help="Stop loss value.")
+    parser.add_argument("--take-profit", type=float, default=None, help="Take profit value.")
+    parser.add_argument("--commission", type=float, default=None, help="Commission setting.")
+    parser.add_argument("--invalid-action-penalty", type=float, default=None, help="Penalty for invalid actions.")
+    parser.add_argument("--hold-penalty", type=float, default=None, help="Penalty for holding.")
+    parser.add_argument("--overtrade-penalty", type=float, default=None, help="Penalty for overtrading.")
+    parser.add_argument("--drawdown-penalty", type=float, default=None, help="Penalty for drawdown.")
+    parser.add_argument("--uses-rth-filter", action="store_true", help="Whether RTH filter is enabled.")
+    parser.add_argument("--uses-zone-gating", action="store_true", help="Whether zone gating is enabled.")
+    parser.add_argument("--uses-time-features", action="store_true", help="Whether time/session features are enabled.")
 
     # ------------------------------------------------------------------
     # EXTRA OPTIONS FOR compare_runs.py
@@ -286,6 +266,71 @@ def build_post_eval_command(args):
     ]
 
 
+def build_experiment_config_command(args):
+    """Build command for scripts/write_experiment_config.py."""
+    cmd = [
+        sys.executable,
+        "scripts/write_experiment_config.py",
+        args.latest_run_pointer,
+    ]
+
+    if args.experiment_name:
+        cmd += ["--experiment-name", args.experiment_name]
+    if args.reward_version:
+        cmd += ["--reward-version", args.reward_version]
+    if args.feature_version:
+        cmd += ["--feature-version", args.feature_version]
+    if args.environment_version:
+        cmd += ["--environment-version", args.environment_version]
+    if args.policy_version:
+        cmd += ["--policy-version", args.policy_version]
+    if args.notes:
+        cmd += ["--notes", args.notes]
+
+    if args.seed is not None:
+        cmd += ["--seed", str(args.seed)]
+    if args.total_timesteps is not None:
+        cmd += ["--total-timesteps", str(args.total_timesteps)]
+    if args.data_file:
+        cmd += ["--data-file", args.data_file]
+    if args.model_file:
+        cmd += ["--model-file", args.model_file]
+    if args.model_dir:
+        cmd += ["--model-dir", args.model_dir]
+    if args.run_id:
+        cmd += ["--run-id", args.run_id]
+
+    if args.entry_window:
+        cmd += ["--entry-window", args.entry_window]
+    if args.max_trades_per_day is not None:
+        cmd += ["--max-trades-per-day", str(args.max_trades_per_day)]
+    if args.max_hold_bars is not None:
+        cmd += ["--max-hold-bars", str(args.max_hold_bars)]
+    if args.stop_loss is not None:
+        cmd += ["--stop-loss", str(args.stop_loss)]
+    if args.take_profit is not None:
+        cmd += ["--take-profit", str(args.take_profit)]
+    if args.commission is not None:
+        cmd += ["--commission", str(args.commission)]
+    if args.invalid_action_penalty is not None:
+        cmd += ["--invalid-action-penalty", str(args.invalid_action_penalty)]
+    if args.hold_penalty is not None:
+        cmd += ["--hold-penalty", str(args.hold_penalty)]
+    if args.overtrade_penalty is not None:
+        cmd += ["--overtrade-penalty", str(args.overtrade_penalty)]
+    if args.drawdown_penalty is not None:
+        cmd += ["--drawdown-penalty", str(args.drawdown_penalty)]
+
+    if args.uses_rth_filter:
+        cmd += ["--uses-rth-filter"]
+    if args.uses_zone_gating:
+        cmd += ["--uses-zone-gating"]
+    if args.uses_time_features:
+        cmd += ["--uses-time-features"]
+
+    return cmd
+
+
 def build_compare_command(args):
     """Build command for scripts/compare_runs.py."""
     cmd = [sys.executable, "scripts/compare_runs.py"]
@@ -322,22 +367,10 @@ def build_compare_command(args):
 def main():
     args = parse_args()
 
-    # --------------------------------------------------------------
-    # Expand --all into full pipeline behavior.
-    #
-    # python scripts/run_pipeline.py --all
-    #
-    # means:
-    #   - train
-    #   - evaluate
-    #   - post-eval
-    #   - compare
-    # --------------------------------------------------------------
     if args.all:
         args.train = True
         args.compare = True
 
-    # Prevent conflicting "only" modes.
     selected_only_modes = sum(
         [
             1 if args.evaluate_only else 0,
@@ -352,7 +385,6 @@ def main():
         )
         sys.exit(1)
 
-    # Prevent mixing --all with "*-only" modes.
     if args.all and (args.evaluate_only or args.post_eval_only or args.compare_only):
         print(
             "ERROR: --all cannot be combined with --evaluate-only, --post-eval-only, or --compare-only.",
@@ -360,85 +392,25 @@ def main():
         )
         sys.exit(1)
 
-    # --------------------------------------------------------------
-    # MODE A: compare only
-    #
-    # Command:
-    #   python scripts/run_pipeline.py --compare-only
-    #
-    # Runs:
-    #   1. scripts/compare_runs.py
-    # --------------------------------------------------------------
     if args.compare_only:
         run_command(build_compare_command(args))
         return
 
-    # --------------------------------------------------------------
-    # MODE B: post-eval only
-    #
-    # Command:
-    #   python scripts/run_pipeline.py --post-eval-only
-    #
-    # Runs:
-    #   1. scripts/run_post_eval.py
-    # --------------------------------------------------------------
     if args.post_eval_only:
         run_command(build_post_eval_command(args))
+        run_command(build_experiment_config_command(args))
         return
 
-    # --------------------------------------------------------------
-    # MODE C: evaluate only
-    #
-    # Command:
-    #   python scripts/run_pipeline.py --evaluate-only
-    #
-    # Runs:
-    #   1. evaluate.py
-    # --------------------------------------------------------------
     if args.evaluate_only:
         run_command(build_evaluate_command(args))
         return
 
-    # --------------------------------------------------------------
-    # MODE D: normal / full pipeline
-    #
-    # Default command:
-    #   python scripts/run_pipeline.py
-    #
-    # Runs:
-    #   1. evaluate.py
-    #   2. scripts/run_post_eval.py
-    #
-    # Train command:
-    #   python scripts/run_pipeline.py --train
-    #
-    # Runs:
-    #   1. train.py
-    #   2. evaluate.py
-    #   3. scripts/run_post_eval.py
-    #
-    # Compare command:
-    #   python scripts/run_pipeline.py --compare
-    #
-    # Runs:
-    #   1. evaluate.py
-    #   2. scripts/run_post_eval.py
-    #   3. scripts/compare_runs.py
-    #
-    # All command:
-    #   python scripts/run_pipeline.py --all
-    #
-    # Runs:
-    #   1. train.py
-    #   2. evaluate.py
-    #   3. scripts/run_post_eval.py
-    #   4. scripts/compare_runs.py
-    # --------------------------------------------------------------
     if args.train:
         run_command(build_train_command(args))
 
     run_command(build_evaluate_command(args))
     run_command(build_post_eval_command(args))
+    run_command(build_experiment_config_command(args))
 
     if args.compare:
         run_command(build_compare_command(args))

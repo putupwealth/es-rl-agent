@@ -1,8 +1,13 @@
 """
+Evaluate trained PPO model for ES PDH/PDL strategy.
+
 Commands:
     python evaluate.py
     python evaluate.py --model-file models/<model_name>.zip
     python evaluate.py --run-id custom_run_name
+    python evaluate.py --latest-model-pointer models/latest_model.txt
+    python evaluate.py --reports-dir reports
+    python evaluate.py --latest-run-pointer reports/latest_run.txt
 """
 
 import argparse
@@ -15,9 +20,9 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from stable_baselines3 import PPO
 
-from src.levels import add_pdh_pdl, add_breakout_features
-from src.features import add_htf_bias
 from src.env import ESBreakoutEnv
+from src.features import add_htf_bias
+from src.levels import add_breakout_features, add_pdh_pdl
 
 
 DATA_FILE = "data/ES_1min_all_sessions.csv"
@@ -115,21 +120,50 @@ def classify_bias_alignment(position, row):
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Evaluate trained PPO model for ES PDH/PDL strategy.")
-    parser.add_argument("--data-file", default=DATA_FILE, help="Path to input CSV data.")
-    parser.add_argument("--model-file", default=None, help="Path to model file or base model path for PPO.load.")
+    parser = argparse.ArgumentParser(
+        description="Evaluate trained PPO model for ES PDH/PDL strategy."
+    )
+    parser.add_argument(
+        "--data-file",
+        default=DATA_FILE,
+        help="Path to input CSV data.",
+    )
+    parser.add_argument(
+        "--model-file",
+        default=None,
+        help="Path to model file or base model path for PPO.load.",
+    )
     parser.add_argument(
         "--latest-model-pointer",
         default=DEFAULT_LATEST_MODEL_POINTER,
         help="Path to latest model pointer file used when --model-file is omitted.",
     )
-    parser.add_argument("--reports-dir", default=DEFAULT_REPORTS_DIR, help="Base directory for evaluation reports.")
-    parser.add_argument("--run-id", default=None, help="Optional explicit run ID for report output folder.")
-    parser.add_argument("--seed", type=int, default=DEFAULT_EVAL_SEED, help="Evaluation seed.")
+    parser.add_argument(
+        "--reports-dir",
+        default=DEFAULT_REPORTS_DIR,
+        help="Base directory for evaluation reports.",
+    )
+    parser.add_argument(
+        "--latest-run-pointer",
+        default=DEFAULT_LATEST_RUN_POINTER,
+        help="Path to latest run pointer file.",
+    )
+    parser.add_argument(
+        "--run-id",
+        default=None,
+        help="Optional explicit run ID for report output folder.",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=DEFAULT_EVAL_SEED,
+        help="Evaluation seed.",
+    )
     return parser.parse_args()
 
 
 def resolve_model_file(model_file_arg: Optional[str], latest_model_pointer: str) -> Path:
+    """Resolve the model file from either --model-file or latest_model.txt."""
     if model_file_arg:
         return Path(model_file_arg)
 
@@ -148,6 +182,7 @@ def resolve_model_file(model_file_arg: Optional[str], latest_model_pointer: str)
 
 
 def resolve_run_id(model_file: Path, reports_dir: Path, explicit_run_id: Optional[str]) -> str:
+    """Resolve a report run ID, avoiding collisions when needed."""
     if explicit_run_id:
         return explicit_run_id
 
@@ -171,12 +206,7 @@ def write_latest_run_pointer(report_dir: Path, latest_run_pointer: Path):
 
 
 def build_steps_dataframe(step_logs: list) -> pd.DataFrame:
-    """Return a DataFrame for step_logs with all required columns guaranteed.
-
-    When step_logs is empty (e.g. an episode that terminates immediately) a
-    zero-row DataFrame with the full column set is returned so that steps.csv
-    always has a proper header for downstream consumers.
-    """
+    """Return a DataFrame for step_logs with all required columns guaranteed."""
     if step_logs:
         df = pd.DataFrame(step_logs)
     else:
@@ -190,22 +220,21 @@ def build_steps_dataframe(step_logs: list) -> pd.DataFrame:
 
 
 def build_trades_dataframe(trades: list) -> pd.DataFrame:
-    """Return a DataFrame for the trades list with a stable column set.
-
-    When trades is empty a zero-row DataFrame with the full TRADES_COLUMNS
-    header is returned so that trades.csv always has meaningful column names.
-    """
+    """Return a DataFrame for the trades list with a stable column set."""
     if trades:
-        return pd.DataFrame(trades)
-    return pd.DataFrame(columns=TRADES_COLUMNS)
+        df = pd.DataFrame(trades)
+    else:
+        df = pd.DataFrame(columns=TRADES_COLUMNS)
+
+    for col in TRADES_COLUMNS:
+        if col not in df.columns:
+            df[col] = pd.NA
+
+    return df[TRADES_COLUMNS]
 
 
 def build_trade_breakdown(trades_df: pd.DataFrame) -> pd.DataFrame:
-    """Return a grouped trade-breakdown DataFrame.
-
-    When trades_df is empty the returned DataFrame still has the expected
-    column headers so that trade_breakdown.csv is never completely bare.
-    """
+    """Return a grouped trade-breakdown DataFrame."""
     if trades_df.empty:
         return pd.DataFrame(
             columns=["direction", "setup_type", "bias_alignment", "trades", "avg_pnl", "total_pnl", "win_rate"]
@@ -228,8 +257,13 @@ def main():
 
     model_file = resolve_model_file(args.model_file, args.latest_model_pointer)
     reports_dir = Path(args.reports_dir)
-    latest_run_pointer = Path(DEFAULT_LATEST_RUN_POINTER)
-    run_id = resolve_run_id(model_file=model_file, reports_dir=reports_dir, explicit_run_id=args.run_id)
+    latest_run_pointer = Path(args.latest_run_pointer)
+
+    run_id = resolve_run_id(
+        model_file=model_file,
+        reports_dir=reports_dir,
+        explicit_run_id=args.run_id,
+    )
     report_dir = reports_dir / run_id
 
     report_file = report_dir / "equity_curve.png"
@@ -238,18 +272,19 @@ def main():
     breakdown_file = report_dir / "trade_breakdown.csv"
     summary_file = report_dir / "eval_summary.json"
 
-    print(f"Model file: {model_file}")
-    print(f"Run ID: {run_id}")
+    print(f"Model file:       {model_file}")
+    print(f"Run ID:           {run_id}")
     print(f"Report directory: {report_dir}")
 
     print("Loading data...")
-    df = pd.read_csv(args.data_file)
+    df = pd.read_csv(args.data_file, low_memory=False)
 
     print("Building features...")
     df = add_pdh_pdl(df)
     df = add_breakout_features(df)
     df = add_htf_bias(df)
 
+    # Remove roll-period data before evaluation.
     df = df[df["is_roll_period"] == 0].reset_index(drop=True)
 
     split = int(len(df) * 0.8)
@@ -357,7 +392,7 @@ def main():
                 "realized_equity": info["realized_equity"],
                 "unrealized_pnl": info["unrealized_pnl"],
                 "total_equity": info["total_equity"],
-                "exit_reason": info["exit_reason"],
+                "exit_reason": info.get("exit_reason"),
                 "valid_long_zone": info.get("valid_long_zone"),
                 "valid_short_zone": info.get("valid_short_zone"),
                 "allowed_long_entry": info.get("allowed_long_entry"),
@@ -371,12 +406,15 @@ def main():
         done = terminated or truncated
 
     print("\n========== EVALUATION ==========")
-    print(f"Final realized equity: ${realized_equity_curve[-1]:.2f}")
-    print(f"Final total equity: ${total_equity_curve[-1]:.2f}")
-    print(f"Cumulative reward: {cumulative_reward:.2f}")
+    final_realized_equity = float(realized_equity_curve[-1]) if realized_equity_curve else 0.0
+    final_total_equity = float(total_equity_curve[-1]) if total_equity_curve else 0.0
+    print(f"Final realized equity: ${final_realized_equity:.2f}")
+    print(f"Final total equity:    ${final_total_equity:.2f}")
+    print(f"Cumulative reward:     {cumulative_reward:.2f}")
+
     action_counts = {a: actions.count(a) for a in set(actions)}
-    print("Action counts:", action_counts)
-    print(f"Logged trades: {len(trades)}")
+    print(f"Action counts:         {action_counts}")
+    print(f"Logged trades:         {len(trades)}")
 
     # Eligibility diagnostics
     total_steps = len(step_logs)
@@ -398,17 +436,20 @@ def main():
         1 for s in step_logs
         if s.get("valid_short_zone") == 0 and s.get("attempted_entry_action") == 2
     )
+
     print("\n========== ELIGIBILITY DIAGNOSTICS ==========")
-    print(f"Total steps: {total_steps}")
-    print(f"Valid long zone steps: {valid_long_steps} ({valid_long_steps / max(1, total_steps):.1%})")
-    print(f"Valid short zone steps: {valid_short_steps} ({valid_short_steps / max(1, total_steps):.1%})")
+    print(f"Total steps:                        {total_steps}")
+    print(f"Valid long zone steps:             {valid_long_steps} ({valid_long_steps / max(1, total_steps):.1%})")
+    print(f"Valid short zone steps:            {valid_short_steps} ({valid_short_steps / max(1, total_steps):.1%})")
     print(f"Long entry attempts on valid bars: {entry_attempts_on_valid_long}")
-    print(f"Short entry attempts on valid bars: {entry_attempts_on_valid_short}")
-    print(f"Long entry attempts on INVALID bars: {invalid_long_attempts}")
+    print(f"Short entry attempts on valid bars:{entry_attempts_on_valid_short}")
+    print(f"Long entry attempts on INVALID bars:  {invalid_long_attempts}")
     print(f"Short entry attempts on INVALID bars: {invalid_short_attempts}")
 
     report_dir.mkdir(parents=True, exist_ok=True)
-    build_steps_dataframe(step_logs).to_csv(step_log_file, index=False)
+
+    steps_df = build_steps_dataframe(step_logs)
+    steps_df.to_csv(step_log_file, index=False)
     print(f"Saved step log: {step_log_file}")
 
     trades_df = build_trades_dataframe(trades)
@@ -438,8 +479,8 @@ def main():
             "test_rows": int(len(test_df)),
         },
         "performance": {
-            "final_realized_equity": float(realized_equity_curve[-1]) if realized_equity_curve else 0.0,
-            "final_total_equity": float(total_equity_curve[-1]) if total_equity_curve else 0.0,
+            "final_realized_equity": final_realized_equity,
+            "final_total_equity": final_total_equity,
             "cumulative_reward": float(cumulative_reward),
         },
         "trades": {
@@ -484,6 +525,17 @@ def main():
             }
         )
 
+    # Guardrail: ensure required eligibility fields are present.
+    missing_eligibility_fields = [
+        field for field in ELIGIBILITY_DIAGNOSTICS_FIELDS
+        if field not in summary["eligibility_diagnostics"]
+    ]
+    if missing_eligibility_fields:
+        raise ValueError(
+            "Missing required eligibility_diagnostics fields: "
+            + ", ".join(missing_eligibility_fields)
+        )
+
     with open(summary_file, "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2)
     print(f"Saved summary: {summary_file}")
@@ -497,9 +549,10 @@ def main():
     plt.ylabel("Equity ($)")
     plt.grid(True)
     plt.legend()
+    plt.tight_layout()
     plt.savefig(report_file)
+    plt.close()
     print(f"Saved report: {report_file}")
-    plt.show()
 
     write_latest_run_pointer(report_dir=report_dir, latest_run_pointer=latest_run_pointer)
 

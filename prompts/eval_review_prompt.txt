@@ -33,6 +33,15 @@ A good review should focus on:
 - whether reward shaping appears balanced
 - whether the current reward system should stay unchanged for another run
 
+Reasoning rules:
+- Prefer recommendations that are directly supported by the packet evidence.
+- If valid setup opportunities exist but the policy does not act on them, prefer explanations about policy learning, observation quality, or reward balance before recommending wider entry criteria.
+- Before recommending stricter validation or new action blocking, consider whether the packet already shows that the environment is blocking those actions. If blocking already exists, prefer recommendations about observation quality, reward balance, or policy learning rather than duplicate validation.
+- Do not recommend increasing trade frequency unless the evidence strongly suggests that valid opportunities are too rare.
+- Do not treat zero trades alone as proof that valid opportunities are missing.
+- If the main problem is repeated blocked actions, say that clearly.
+- If the evidence suggests the current reward system may still be acceptable, explicitly say to keep it unchanged for another validation run.
+
 Output requirements:
 - Write markdown only.
 - Use exactly these section headings:

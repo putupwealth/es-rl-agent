@@ -1,8 +1,5 @@
 import argparse
 import json
-import shutil
-import time
-from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -20,6 +17,7 @@ DATA_FILE = "data/ES_1min_all_sessions.csv"
 DEFAULT_LATEST_MODEL_POINTER = "models/latest_model.txt"
 DEFAULT_REPORTS_DIR = "reports"
 DEFAULT_EVAL_SEED = 42
+DEFAULT_LATEST_RUN_POINTER = "reports/latest_run.txt"
 
 # Required columns that must be present in steps.csv for later verification.
 STEPS_REQUIRED_COLUMNS = [
@@ -157,70 +155,12 @@ def resolve_run_id(model_file: Path, reports_dir: Path, explicit_run_id: Optiona
     return run_id
 
 
-def _refresh_latest_reports_once(report_dir: Path, latest_dir: Path):
-    """Delete and recreate the latest reports directory once."""
-    if latest_dir.exists():
-        shutil.rmtree(latest_dir)
-    shutil.copytree(report_dir, latest_dir)
-
-
-def copy_latest_reports(
-    report_dir: Path,
-    latest_dir: Path,
-    timeout_seconds: float = 5.0,
-    max_attempts: int = 3,
-    retry_delay_seconds: float = 0.75,
-):
-    """Best-effort refresh of the latest reports directory.
-
-    Behavior:
-    - tries up to `max_attempts`
-    - each attempt is bounded by `timeout_seconds`
-    - on timeout/lock/error, retries after a short delay
-    - if all attempts fail, logs a warning and continues
-    """
-    print(f"Refreshing latest reports directory: {latest_dir}")
-
-    last_error = None
-
-    for attempt in range(1, max_attempts + 1):
-        print(f"Latest reports refresh attempt {attempt}/{max_attempts}...")
-
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(_refresh_latest_reports_once, report_dir, latest_dir)
-
-            try:
-                future.result(timeout=timeout_seconds)
-                print(f"Copied latest reports to: {latest_dir}")
-                return
-
-            except TimeoutError:
-                last_error = (
-                    f"Timed out after {timeout_seconds:.1f}s while refreshing latest reports directory"
-                )
-                print(f"WARNING: {last_error} (attempt {attempt}/{max_attempts})")
-
-            except PermissionError as exc:
-                last_error = f"PermissionError: {exc}"
-                print(
-                    f"WARNING: Could not refresh latest reports directory: {exc} "
-                    f"(attempt {attempt}/{max_attempts})"
-                )
-
-            except Exception as exc:
-                last_error = f"{type(exc).__name__}: {exc}"
-                print(
-                    f"WARNING: Unexpected error while refreshing latest reports directory: {exc} "
-                    f"(attempt {attempt}/{max_attempts})"
-                )
-
-        if attempt < max_attempts:
-            time.sleep(retry_delay_seconds)
-
-    print("WARNING: Failed to refresh latest reports directory after all retry attempts.")
-    if last_error:
-        print(f"Last error: {last_error}")
-    print(f"Run artifacts remain available in: {report_dir}")
+def write_latest_run_pointer(report_dir: Path, latest_run_pointer: Path):
+    """Write a lightweight pointer to the most recent evaluation report directory."""
+    latest_run_pointer.parent.mkdir(parents=True, exist_ok=True)
+    latest_run_pointer.write_text(str(report_dir), encoding="utf-8")
+    print(f"Updated latest run pointer: {latest_run_pointer}")
+    print(f"Latest run points to: {report_dir}")
 
 
 def build_steps_dataframe(step_logs: list) -> pd.DataFrame:
@@ -281,6 +221,7 @@ def main():
 
     model_file = resolve_model_file(args.model_file, args.latest_model_pointer)
     reports_dir = Path(args.reports_dir)
+    latest_run_pointer = Path(DEFAULT_LATEST_RUN_POINTER)
     run_id = resolve_run_id(model_file=model_file, reports_dir=reports_dir, explicit_run_id=args.run_id)
     report_dir = reports_dir / run_id
 
@@ -553,17 +494,7 @@ def main():
     print(f"Saved report: {report_file}")
     plt.show()
 
-    latest_dir = reports_dir / "latest"
-    print("About to refresh latest reports...")
-    copy_latest_reports(
-        report_dir=report_dir,
-        latest_dir=latest_dir,
-        timeout_seconds=5.0,
-        max_attempts=3,
-        retry_delay_seconds=0.75,
-    )
-    print("Finished latest reports step.")
-    print(f"Latest reports target: {latest_dir}")
+    write_latest_run_pointer(report_dir=report_dir, latest_run_pointer=latest_run_pointer)
 
 
 if __name__ == "__main__":

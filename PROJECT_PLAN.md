@@ -108,18 +108,18 @@ This document tracks milestone progress, completion criteria, and next steps for
 ## Milestone 4 — Build LLM review layer
 
 ### Status
-**NOT STARTED**
+**Done**
 
 ### Tasks
-- [ ] Create `prompts/eval_review_prompt.txt`
-- [ ] Create `scripts/review_with_llm.py`
-- [ ] Load packet and prompt
-- [ ] Call LLM
-- [ ] Save `llm_review.md`
+- [x] Create `prompts/eval_review_prompt.txt`
+- [x] Create `scripts/review_with_llm.py`
+- [x] Load packet and prompt
+- [x] Call LLM
+- [x] Save `llm_review.md`
 
 ### Done Criteria
-- [ ] A real run generates `llm_review.md`
-- [ ] Review includes:
+- [x] A real run generates `llm_review.md`
+- [x] Review includes:
   - Summary
   - Evidence
   - Interpretation
@@ -139,7 +139,9 @@ This document tracks milestone progress, completion criteria, and next steps for
 **IN PROGRESS**
 
 ### Original Tasks
-- [ ] Create `scripts/run_train_eval_review.py`
+- [x] Create orchestration entry point
+      Note: implemented via scripts/run_post_eval.py and scripts/run_pipeline.py
+        instead of scripts/run_train_eval_review.py
 - [x] Run `train.py`
 - [x] Run `evaluate.py`
 - [x] Run verifier
@@ -148,32 +150,33 @@ This document tracks milestone progress, completion criteria, and next steps for
 - [x] Print/save final output paths
 
 ### Current Implementation Notes
-- Instead of `scripts/run_train_eval_review.py`, the project now uses:
-  - `scripts/run_post_eval.py`
-  - `scripts/run_pipeline.py`
-- `scripts/run_post_eval.py` runs:
-  - `scripts/verify_eval_output.py`
-  - `scripts/build_llm_input_packet.py`
-- `scripts/run_pipeline.py` supports:
-  - default evaluate + post-eval
-  - `--train`
-  - `--compare`
-  - `--all`
-  - `--evaluate-only`
-  - `--post-eval-only`
-  - `--compare-only`
+- The project uses:
+  - scripts/run_post_eval.py
+  - scripts/run_pipeline.py
+- scripts/run_post_eval.py runs:
+  - scripts/verify_eval_output.py
+  - scripts/build_llm_input_packet.py
+  - scripts/review_with_llm.py
+- scripts/run_pipeline.py supports:
+  - default evaluate + post-eval + experiment config
+  - --train
+  - --compare
+  - --all
+  - --evaluate-only
+  - --post-eval-only
+  - --compare-only
 
 ### Current Status Summary
 - Core orchestration exists and works for train/evaluate/verifier/packet/compare.
-- LLM review stage is not yet wired in because Milestone 4 is not complete.
+- LLM review stage is now wired in 
 
 ### Done Criteria
-- [ ] One command runs the whole workflow end-to-end
+- [x] One command runs the whole workflow end-to-end
 - [x] Outputs are saved into the report folder
 
-### Remaining Work
-- [ ] Add LLM review stage into unified pipeline
-- [ ] Optionally print final paths for review artifact as well
+### Done Work
+- [x] Add LLM review stage into unified pipeline
+- [x] Optionally print final paths for review artifact as well
 
 ---
 
@@ -267,15 +270,6 @@ Runs:
 
 ### Comparison artifacts
 - `reports/comparisons/run_comparison_YYYYMMDD_HHMMSS.csv`
-
----
-
-## Next Recommended Milestones
-
-### Immediate Next
-1. Complete Milestone 4 — Build LLM review layer
-2. Finish Milestone 5 by wiring review into pipeline
-3. Finish Milestone 6 with formal real-run validation
 
 ### After That
 4. Add best-run promotion workflow

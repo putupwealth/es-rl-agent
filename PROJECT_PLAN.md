@@ -314,3 +314,323 @@ The main missing capability is automated LLM review generation and formal valida
 - [ ] Add review stage into `scripts/run_pipeline.py`
 - [ ] Run formal validation against dead and active runs
 - [ ] Optionally add `scripts/pick_best_run.py`
+
+
+
+# RL Research Loop
+
+This project is no longer just a training script.
+
+It is becoming an **RL research loop**.
+
+## Core idea
+
+- **PPO learns the policy**
+- **The LLM helps design better training conditions for PPO**
+
+The LLM does **not** replace reinforcement learning.  
+It improves the **decision-making around PPO experiments**.
+
+---
+
+## Research loop
+
+The workflow is:
+
+1. **Train model**
+2. **Evaluate behavior**
+3. **Verify behavior deterministically**
+4. **Summarize evidence compactly**
+5. **Use LLM to interpret evidence**
+6. **Choose next reward / feature / rule change**
+7. **Retrain**
+
+Then repeat.
+
+---
+
+## What PPO does
+
+PPO is responsible for learning from:
+
+- observations
+- actions
+- rewards
+- episode transitions
+
+PPO updates the policy weights and learns which actions produce better long-term reward under the current environment design.
+
+---
+
+## What the LLM does
+
+The LLM is not the policy learner.
+
+Its role is to act as a **research reviewer** that reads run artifacts and helps answer:
+
+- What is the policy doing?
+- What is it doing wrong?
+- Why is it likely happening?
+- What should be changed next?
+- What should be verified in the next run?
+- Is the current reward system helping or hurting learning?
+- Should the reward system stay the same, be simplified, or be adjusted?
+
+The LLM improves the experimental loop by turning run evidence into structured next-step recommendations.
+
+---
+
+## Why this matters
+
+Without this layer, RL iteration can become random trial and error:
+
+- tweak reward
+- retrain
+- inspect results manually
+- guess next change
+- repeat
+
+With an LLM review layer, the process becomes more systematic:
+
+- verify what happened
+- summarize the evidence
+- interpret likely causes
+- propose targeted changes
+- define what success looks like next run
+
+This makes the project more disciplined and easier to scale.
+
+---
+
+## What the LLM should help improve
+
+The LLM should help guide decisions about:
+
+- reward shaping
+- whether the current reward system is good enough to keep
+- when a reward system should stay unchanged
+- when a reward term should be softened or removed
+- when one small new shaping term is justified
+- action gating
+- entry and exit rules
+- observation features
+- time-of-day constraints
+- overtrading controls
+- drawdown handling
+- validation priorities
+- next-run experiment design
+
+Examples:
+
+- reduce invalid entry attempts
+- discourage overtrading
+- penalize holding losers
+- restrict entries to stronger time windows
+- add time-window features to observation
+- keep the current reward system unchanged for another validation run
+- simplify reward if penalties are stacking too aggressively
+- test one reward change at a time
+
+---
+
+## Reward system assessment
+
+A key role of the LLM is to evaluate whether the current reward system is producing the intended behavior.
+
+The LLM should help answer:
+
+- Is the current reward design encouraging good trades?
+- Is it causing overtrading?
+- Is it allowing random entries?
+- Is it failing to discourage holding losers?
+- Is it creating too much inactivity?
+- Is it managing drawdown well enough?
+- Should the reward system stay as it is, or should it change?
+
+The goal is **not** to change reward every run.
+
+The goal is to determine whether the current reward system is:
+
+- working well enough to keep
+- slightly too harsh
+- slightly too weak
+- overly complex
+- sending mixed signals
+- causing unintended behavior
+
+A strong LLM review should say whether the next best step is:
+
+- **keep the current reward system**
+- **simplify the reward system**
+- **soften an existing penalty**
+- **add one small shaping term**
+- **remove one harmful shaping term**
+
+This makes the LLM part of the **reward-design feedback loop**, not part of PPO training itself.
+
+---
+
+## What “good” means in this project
+
+A “good” PPO policy is **not** just one that trades more.
+
+A good policy should show behavior like:
+
+- trades only when conditions are favorable
+- avoids random or low-quality entries
+- does not overtrade
+- cuts losing trades reasonably
+- does not hold losers too long
+- respects intended market/session constraints
+- produces cleaner, more explainable decisions
+- improves risk-adjusted behavior, not just raw activity
+
+In this project, “good” means the policy becomes:
+
+### 1. More selective
+It should trade when valid opportunity exists, not just when action noise happens.
+
+### 2. Less random
+Entries should align with:
+- valid breakout context
+- directional bias
+- intended session/time filters
+- other explicit setup logic
+
+### 3. Less overactive
+The agent should avoid churning many weak trades just to stay active.
+
+### 4. Better at risk control
+It should:
+- avoid excessive drawdown
+- avoid holding losing trades too long
+- exit bad trades more cleanly
+- preserve capital better
+
+### 5. More explainable
+A good run should be understandable from artifacts:
+- why entries happened
+- why trades were blocked
+- why exits happened
+- what the main failure mode was
+
+### 6. More consistent
+Improvement should not rely on one lucky run.
+A good policy should show repeatable improvement across comparable evaluations.
+
+---
+
+## How to judge whether a run is getting better
+
+A run is getting better if it shows some combination of:
+
+- more participation on valid setup bars
+- fewer invalid entry attempts
+- fewer blocked low-quality actions
+- lower overtrading / churn
+- shorter loser hold duration
+- better drawdown behavior
+- more stable trade quality
+- clearer alignment with intended trading windows
+- better consistency across repeated runs
+
+Important:
+A run is **not automatically better** just because:
+- it took more trades
+- it had one large winner
+- raw PnL increased once
+
+Behavior quality matters, not just one headline metric.
+
+---
+
+## What the LLM should not do
+
+The LLM should **not**:
+
+- claim it trained the PPO model
+- replace deterministic verification
+- invent metrics not present in the packet
+- make vague recommendations without evidence
+- assume the reward system must change every run
+- act as financial advice
+
+Its role is:
+
+- interpret
+- prioritize
+- recommend
+- help design better experiments
+
+---
+
+## Project architecture meaning
+
+This project now has two different intelligence layers:
+
+### 1. Learning layer
+**PPO**
+- learns trading behavior from environment feedback
+
+### 2. Research layer
+**LLM**
+- reviews outputs
+- diagnoses likely failure modes
+- recommends the next best environment/reward/feature changes
+- evaluates whether the current reward system should be kept or changed
+
+Together they form a repeatable research workflow.
+
+---
+
+## Practical interpretation
+
+A good way to think about it is:
+
+> PPO learns the current game.  
+> The LLM helps redesign the game so PPO can learn better behavior.
+
+Or more concretely:
+
+> PPO optimizes the policy.  
+> The LLM improves the experiment design.
+
+Also:
+
+> PPO learns under the current reward system.  
+> The LLM helps judge whether that reward system is good enough to keep.
+
+---
+
+## Current loop in this project
+
+The intended loop is:
+
+1. `train.py`
+2. `evaluate.py`
+3. `scripts/verify_eval_output.py`
+4. `scripts/build_llm_input_packet.py`
+5. `scripts/review_with_llm.py`
+6. decide next environment/reward/feature change
+7. retrain with `train.py`
+
+Over time, this turns the repository into a structured RL experimentation system rather than a single-model training project.
+
+---
+
+## Goal of this approach
+
+The goal is not to build a magic trading bot.
+
+The goal is to build a disciplined system that can:
+
+- test ideas objectively
+- detect failure modes faster
+- improve environment design systematically
+- reduce random tuning
+- support repeatable RL experimentation
+- decide when a reward system is good enough to keep stable
+
+That is the real value of the RL research loop.
+
+

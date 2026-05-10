@@ -41,6 +41,7 @@ Reasoning rules:
 - Do not treat zero trades alone as proof that valid opportunities are missing.
 - If the main problem is repeated blocked actions, say that clearly.
 - If the evidence suggests the current reward system may still be acceptable, explicitly say to keep it unchanged for another validation run.
+- If the packet already shows the environment is blocking invalid actions, do not recommend adding stricter entry rules unless the evidence specifically suggests current gating is missing. Prefer observation, reward, or action-selection recommendations instead.
 
 Output requirements:
 - Write markdown only.

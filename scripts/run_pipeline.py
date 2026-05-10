@@ -282,7 +282,6 @@ def build_post_eval_command(args):
     return [
         sys.executable,
         "scripts/run_post_eval.py",
-        "--latest-run-pointer",
         args.latest_run_pointer,
     ]
 

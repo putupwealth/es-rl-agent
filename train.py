@@ -83,7 +83,7 @@ def main():
     )
 
     print("Training started...")
-    model.learn(total_timesteps=9_000_000)
+    model.learn(total_timesteps=1_000_00)
 
     model_path.parent.mkdir(parents=True, exist_ok=True)
     model.save(str(model_path))

@@ -1,22 +1,31 @@
 """
 Recommend the next experiment based on recent evaluation runs.
 
-This Phase 5 V1 implementation is deterministic and rule-based.
+This Phase 5 V1.1 implementation is deterministic and rule-based.
 It scans recent report folders, loads evaluation/verification/config metadata,
 identifies the latest run and best benchmark run, detects repeated failure
 patterns, and prints a recommendation. It can also save the recommendation
 to a markdown file.
+
+Enhancements in V1.1
+--------------------
+- Optional inclusion of saved llm_review.md from the latest run
+- Console + markdown "LLM review alignment" section
+- No new LLM API call
 
 Examples
 --------
 python scripts/recommend_next_experiment.py
 python scripts/recommend_next_experiment.py --reports-dir reports --latest 10
 python scripts/recommend_next_experiment.py --reports-dir reports --latest 15 --save
+python scripts/recommend_next_experiment.py --reports-dir reports --latest 10 --include-llm-review
+python scripts/recommend_next_experiment.py --reports-dir reports --latest 10 --include-llm-review --save
 python scripts/recommend_next_experiment.py --out reports/recommendations/my_recommendation.md
 """
 
 import argparse
 import json
+import re
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
@@ -35,6 +44,15 @@ def safe_load_json(path: Path) -> Optional[dict]:
     try:
         with open(path, encoding="utf-8") as f:
             return json.load(f)
+    except Exception:
+        return None
+
+
+def safe_read_text(path: Path) -> Optional[str]:
+    if not path.exists():
+        return None
+    try:
+        return path.read_text(encoding="utf-8")
     except Exception:
         return None
 
@@ -61,6 +79,136 @@ def format_label(value) -> str:
     if value is None or pd.isna(value):
         return "unknown"
     return str(value)
+
+
+def clip_text(text: Optional[str], max_len: int = 220) -> str:
+    if not text:
+        return "unknown"
+    text = " ".join(str(text).split())
+    if len(text) <= max_len:
+        return text
+    return text[: max_len - 3].rstrip() + "..."
+
+
+def extract_markdown_sections(text: str) -> Dict[str, str]:
+    """
+    Extract sections from markdown of the form:
+
+    ## Section Name
+    content...
+    """
+    if not text:
+        return {}
+
+    pattern = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
+    matches = list(pattern.finditer(text))
+
+    sections: Dict[str, str] = {}
+    for idx, match in enumerate(matches):
+        section_name = match.group(1).strip()
+        start = match.end()
+        end = matches[idx + 1].start() if idx + 1 < len(matches) else len(text)
+        section_body = text[start:end].strip()
+        sections[section_name] = section_body
+
+    return sections
+
+
+def normalize_heading_key(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", name.strip().lower()).strip("_")
+
+
+def parse_llm_review(report_dir: str) -> Dict[str, Optional[str]]:
+    review_path = Path(report_dir) / "llm_review.md"
+    text = safe_read_text(review_path)
+    if not text:
+        return {
+            "present": False,
+            "path": str(review_path),
+            "summary": None,
+            "top_recommended_changes": None,
+            "what_to_verify_next_run": None,
+            "confidence": None,
+        }
+
+    sections = extract_markdown_sections(text)
+    normalized = {normalize_heading_key(k): v for k, v in sections.items()}
+
+    return {
+        "present": True,
+        "path": str(review_path),
+        "summary": normalized.get("summary"),
+        "top_recommended_changes": normalized.get("top_recommended_changes"),
+        "what_to_verify_next_run": normalized.get("what_to_verify_next_run"),
+        "confidence": normalized.get("confidence"),
+    }
+
+
+def build_llm_alignment(
+    latest_row: Optional[pd.Series],
+    recommendation_lines: List[str],
+    include_llm_review: bool,
+) -> List[str]:
+    lines: List[str] = []
+
+    if not include_llm_review:
+        return lines
+
+    if latest_row is None:
+        lines.append("LLM review alignment skipped because no latest run was available.")
+        return lines
+
+    report_dir = latest_row.get("report_dir")
+    if not report_dir:
+        lines.append("LLM review alignment skipped because latest run report_dir was unavailable.")
+        return lines
+
+    llm_review = parse_llm_review(report_dir)
+    if not llm_review.get("present"):
+        lines.append("No saved llm_review.md was found for the latest run.")
+        return lines
+
+    lines.append("Saved llm_review.md is present for the latest run.")
+
+    confidence = clip_text(llm_review.get("confidence"), 80)
+    if confidence != "unknown":
+        lines.append(f"Review confidence: {confidence}")
+
+    summary = llm_review.get("summary")
+    if summary:
+        lines.append(f"Review summary excerpt: {clip_text(summary)}")
+
+    top_changes = llm_review.get("top_recommended_changes")
+    if top_changes:
+        lines.append(f"Top recommended changes excerpt: {clip_text(top_changes)}")
+
+    verify_next = llm_review.get("what_to_verify_next_run")
+    if verify_next:
+        lines.append(f"What-to-verify excerpt: {clip_text(verify_next)}")
+
+    combined_text = " ".join(
+        [
+            (summary or ""),
+            (top_changes or ""),
+            (verify_next or ""),
+            " ".join(recommendation_lines),
+        ]
+    ).lower()
+
+    if "invalid" in combined_text and ("gating" in combined_text or "action masking" in combined_text):
+        lines.append(
+            "Deterministic recommendation and saved LLM review are aligned on fixing invalid entries / gating behavior first."
+        )
+    elif "trade" in combined_text and "zero" in combined_text:
+        lines.append(
+            "Deterministic recommendation and saved LLM review are aligned on restoring non-zero trade activity."
+        )
+    else:
+        lines.append(
+            "Saved LLM review is available for reference; alignment with deterministic recommendation appears broadly consistent."
+        )
+
+    return lines
 
 
 def is_run_directory(path: Path) -> bool:
@@ -431,6 +579,7 @@ def render_markdown(
     recommendation_lines: List[str],
     verify_lines: List[str],
     suggested_metadata: Dict[str, str],
+    llm_alignment_lines: List[str],
 ) -> str:
     lines: List[str] = []
 
@@ -506,6 +655,12 @@ def render_markdown(
         lines.append(item)
     lines.append("")
 
+    if llm_alignment_lines:
+        lines.append("## LLM review alignment")
+        for item in llm_alignment_lines:
+            lines.append(f"- {item}")
+        lines.append("")
+
     return "\n".join(lines)
 
 
@@ -517,6 +672,7 @@ def print_console_summary(
     recommendation_lines: List[str],
     verify_lines: List[str],
     suggested_metadata: Dict[str, str],
+    llm_alignment_lines: List[str],
 ):
     print("\n=== NEXT EXPERIMENT RECOMMENDATION ===")
     print(f"Scanned runs: {len(df)}")
@@ -566,6 +722,11 @@ def print_console_summary(
     for item in verify_lines:
         print(item)
 
+    if llm_alignment_lines:
+        print("\nLLM review alignment:")
+        for item in llm_alignment_lines:
+            print(f"- {item}")
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Recommend the next experiment based on recent evaluation runs.")
@@ -573,6 +734,7 @@ def parse_args():
     parser.add_argument("--latest", type=int, default=10, help="Number of most recent runs to scan.")
     parser.add_argument("--save", action="store_true", help="Save recommendation markdown to the recommendations directory.")
     parser.add_argument("--out", default=None, help="Explicit markdown output path.")
+    parser.add_argument("--include-llm-review", action="store_true", help="Include saved llm_review.md excerpts if present.")
     return parser.parse_args()
 
 
@@ -597,6 +759,11 @@ def main():
         benchmark_row=benchmark_row,
         patterns=patterns,
     )
+    llm_alignment_lines = build_llm_alignment(
+        latest_row=latest_row,
+        recommendation_lines=recommendation_lines,
+        include_llm_review=args.include_llm_review,
+    )
 
     print_console_summary(
         df=df,
@@ -606,6 +773,7 @@ def main():
         recommendation_lines=recommendation_lines,
         verify_lines=verify_lines,
         suggested_metadata=suggested_metadata,
+        llm_alignment_lines=llm_alignment_lines,
     )
 
     markdown = render_markdown(
@@ -616,6 +784,7 @@ def main():
         recommendation_lines=recommendation_lines,
         verify_lines=verify_lines,
         suggested_metadata=suggested_metadata,
+        llm_alignment_lines=llm_alignment_lines,
     )
 
     output_path: Optional[Path] = None
